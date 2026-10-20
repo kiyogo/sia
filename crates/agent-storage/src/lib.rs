@@ -7,6 +7,9 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+pub mod workflow_store;
+pub use workflow_store::*;
+
 #[derive(Error, Debug)]
 pub enum StorageError {
     #[error("Database error: {0}")]
@@ -206,9 +209,118 @@ impl Database {
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS workflows (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                goal TEXT NOT NULL,
+                status TEXT NOT NULL,
+                budget_json TEXT NOT NULL,
+                result_summary TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS workflow_tasks (
+                id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                parent_task_id TEXT,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                assigned_agent TEXT NOT NULL,
+                status TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                inputs_json TEXT NOT NULL DEFAULT '{}',
+                outputs_json TEXT NOT NULL DEFAULT '{}',
+                acceptance_criteria TEXT NOT NULL DEFAULT '',
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                max_retries INTEGER NOT NULL DEFAULT 3,
+                timeout_secs INTEGER NOT NULL DEFAULT 300,
+                started_at TEXT,
+                completed_at TEXT,
+                error TEXT,
+                FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS task_dependencies (
+                workflow_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                depends_on_task_id TEXT NOT NULL,
+                condition TEXT NOT NULL DEFAULT 'Success',
+                PRIMARY KEY(workflow_id, task_id, depends_on_task_id),
+                FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS task_attempts (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error TEXT,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                token_in INTEGER NOT NULL DEFAULT 0,
+                token_out INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(task_id) REFERENCES workflow_tasks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS shared_artifacts (
+                id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                task_id TEXT,
+                artifact_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                path_or_uri TEXT NOT NULL,
+                content_preview TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS resource_leases (
+                resource_id TEXT PRIMARY KEY,
+                resource_type TEXT NOT NULL,
+                owner_agent_id TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                lease_until TEXT NOT NULL,
+                fencing_token INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_messages (
+                id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                task_id TEXT,
+                source_agent TEXT NOT NULL,
+                target_agent TEXT NOT NULL,
+                message_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS workflow_token_usage (
+                id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                task_id TEXT,
+                agent_type TEXT NOT NULL,
+                token_in INTEGER NOT NULL,
+                token_out INTEGER NOT NULL,
+                estimated_cost REAL NOT NULL DEFAULT 0.0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON checkpoints(task_id);
+            CREATE INDEX IF NOT EXISTS idx_workflow_tasks_workflow ON workflow_tasks(workflow_id);
+            CREATE INDEX IF NOT EXISTS idx_workflow_tasks_status ON workflow_tasks(status);
+            CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+            CREATE INDEX IF NOT EXISTS idx_artifacts_workflow ON shared_artifacts(workflow_id);
+            CREATE INDEX IF NOT EXISTS idx_agent_msgs_workflow ON agent_messages(workflow_id);
             "#,
         )?;
         Ok(())
@@ -553,5 +665,131 @@ mod tests {
             .expect("get ck")
             .expect("must exist");
         assert_eq!(latest.step_index, 1);
+    }
+
+    #[tokio::test]
+    async fn test_multi_agent_workflow_storage() {
+        let db = Database::open_in_memory().expect("open memory db");
+        let wf_id = Uuid::new_v4();
+        let wf = Workflow {
+            id: wf_id,
+            title: "Build & Test Web App".to_string(),
+            goal: "Full lifecycle build, test, and verification".to_string(),
+            status: WorkflowStatus::Running,
+            budget_json: r#"{"max_tokens":50000}"#.to_string(),
+            result_summary: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        db.create_workflow(&wf).await.expect("create workflow");
+        let fetched_wf = db.get_workflow(wf_id).await.expect("get wf").expect("must exist");
+        assert_eq!(fetched_wf.title, "Build & Test Web App");
+
+        // Create tasks
+        let task1_id = Uuid::new_v4();
+        let task1 = WorkflowTask {
+            id: task1_id,
+            workflow_id: wf_id,
+            parent_task_id: None,
+            title: "Generate React Component".to_string(),
+            description: "Code a high performance component".to_string(),
+            assigned_agent: "Coding".to_string(),
+            status: WorkflowTaskStatus::Completed,
+            priority: 10,
+            inputs_json: "{}".to_string(),
+            outputs_json: r#"{"files":["App.tsx"]}"#.to_string(),
+            acceptance_criteria: "Compiles cleanly".to_string(),
+            retry_count: 0,
+            max_retries: 3,
+            timeout_secs: 60,
+            started_at: Some(Utc::now()),
+            completed_at: Some(Utc::now()),
+            error: None,
+        };
+        db.create_workflow_task(&task1).await.expect("create task1");
+
+        let task2_id = Uuid::new_v4();
+        let task2 = WorkflowTask {
+            id: task2_id,
+            workflow_id: wf_id,
+            parent_task_id: None,
+            title: "Verify in Headless Browser".to_string(),
+            description: "Navigate and check DOM tree".to_string(),
+            assigned_agent: "Browser".to_string(),
+            status: WorkflowTaskStatus::Ready,
+            priority: 5,
+            inputs_json: "{}".to_string(),
+            outputs_json: "{}".to_string(),
+            acceptance_criteria: "Title matches".to_string(),
+            retry_count: 0,
+            max_retries: 3,
+            timeout_secs: 60,
+            started_at: None,
+            completed_at: None,
+            error: None,
+        };
+        db.create_workflow_task(&task2).await.expect("create task2");
+
+        // Add dependency: task2 depends on task1
+        let dep = TaskDependency {
+            workflow_id: wf_id,
+            task_id: task2_id,
+            depends_on_task_id: task1_id,
+            condition: "Success".to_string(),
+        };
+        db.add_task_dependency(&dep).await.expect("add dependency");
+
+        let deps = db.get_task_dependencies(wf_id).await.expect("get deps");
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].task_id, task2_id);
+        assert_eq!(deps[0].depends_on_task_id, task1_id);
+
+        // Save artifact
+        let art = SharedArtifact {
+            id: Uuid::new_v4(),
+            workflow_id: wf_id,
+            task_id: Some(task1_id),
+            artifact_type: "CodePatch".to_string(),
+            name: "App.tsx".to_string(),
+            path_or_uri: "src/App.tsx".to_string(),
+            content_preview: "export function App() {}".to_string(),
+            hash: "sha256:abc1234".to_string(),
+            metadata_json: "{}".to_string(),
+            created_at: Utc::now(),
+        };
+        db.save_shared_artifact(&art).await.expect("save artifact");
+        let arts = db.list_shared_artifacts(wf_id).await.expect("list arts");
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0].name, "App.tsx");
+
+        // Acquire and release resource lease
+        let lease = ResourceLease {
+            resource_id: "desktop:primary".to_string(),
+            resource_type: "Desktop".to_string(),
+            owner_agent_id: "ComputerAgent".to_string(),
+            workflow_id: wf_id,
+            task_id: task1_id,
+            lease_until: Utc::now() + chrono::Duration::seconds(30),
+            fencing_token: 1,
+        };
+        let acquired = db.acquire_resource_lease(&lease).await.expect("acquire lease");
+        assert!(acquired);
+
+        // Try to acquire same lease with different agent should be denied
+        let conflicting_lease = ResourceLease {
+            resource_id: "desktop:primary".to_string(),
+            resource_type: "Desktop".to_string(),
+            owner_agent_id: "AnotherAgent".to_string(),
+            workflow_id: wf_id,
+            task_id: task2_id,
+            lease_until: Utc::now() + chrono::Duration::seconds(30),
+            fencing_token: 2,
+        };
+        let conflict_acquired = db.acquire_resource_lease(&conflicting_lease).await.expect("check conflict");
+        assert!(!conflict_acquired);
+
+        // Release lease
+        db.release_resource_lease("desktop:primary", 1).await.expect("release lease");
     }
 }

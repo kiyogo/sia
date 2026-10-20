@@ -1,6 +1,66 @@
-export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'coding' | 'computer' | 'browser' | 'workspace' | 'terminal' | 'settings';
+export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'coding' | 'computer' | 'browser' | 'workflows' | 'workspace' | 'terminal' | 'settings';
 
 export type CodingMode = 'Ask' | 'Plan' | 'Build';
+
+export type WorkflowStatus = 'Pending' | 'Planning' | 'Running' | 'WaitingApproval' | 'Pausing' | 'Paused' | 'Completed' | 'PartiallyCompleted' | 'Failed' | 'Cancelled';
+
+export type WorkflowTaskStatus = 'Pending' | 'Ready' | 'Assigned' | 'Running' | 'WaitingApproval' | 'WaitingResource' | 'Verifying' | 'Completed' | 'Failed' | 'Cancelled' | 'Blocked';
+
+export interface WorkflowDto {
+  id: string;
+  title: string;
+  goal: string;
+  status: WorkflowStatus;
+  budget_json: string;
+  result_summary?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowTaskDto {
+  id: string;
+  workflow_id: string;
+  parent_task_id?: string;
+  title: string;
+  description: string;
+  assigned_agent: string;
+  status: WorkflowTaskStatus;
+  priority: number;
+  inputs_json: string;
+  outputs_json: string;
+  acceptance_criteria: string;
+  retry_count: number;
+  max_retries: number;
+  timeout_secs: number;
+  started_at?: string;
+  completed_at?: string;
+  error?: string;
+}
+
+export interface ArtifactRefDto {
+  id: string;
+  workflow_id: string;
+  task_id?: string;
+  artifact_type: string;
+  name: string;
+  hash: string;
+  path_or_uri: string;
+  summary: string;
+  byte_size: number;
+  created_at: string;
+}
+
+export interface AgentDefinitionDto {
+  id: string;
+  agent_type: string;
+  display_name: string;
+  capabilities: string[];
+  supported_tools: string[];
+  required_permissions: string[];
+  max_concurrency: number;
+  is_enabled: boolean;
+  model_name?: string;
+}
 
 export interface WindowInfo {
   id: string;

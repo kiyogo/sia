@@ -126,7 +126,14 @@ limitations under the License.
 
 ---
 
-## 7. Tailwind CSS
+## 8. Tailwind CSS
 
 - **Repository**: https://github.com/tailwindlabs/tailwindcss
 - **License**: MIT License (Copyright (c) Tailwind Labs, Inc.)
+
+---
+
+## 9. Sha2 (RustCrypto)
+
+- **Repository**: https://github.com/RustCrypto/hashes
+- **License**: MIT OR Apache-2.0 License (Copyright (c) 2016-2024 RustCrypto developers)

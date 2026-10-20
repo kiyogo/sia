@@ -1,6 +1,7 @@
 use agent_core::{
-    ActionVerifier, AgentEvent, AgentLoop, CodingMode, CodingWorkflowEngine, ContextBudgetConfig,
-    ModelProvider, OpenAiCompatibleProvider, TokenOptimizer, ToolStrategyRouter,
+    ActionVerifier, AgentEvent, AgentLoop, AgentRegistry, CodingMode, CodingWorkflowEngine,
+    ContextBudgetConfig, ModelProvider, OpenAiCompatibleProvider, ResourceLockManager,
+    SharedArtifactStore, TokenOptimizer, ToolStrategyRouter,
 };
 use agent_platform::{
     get_platform_adapters, LanguageToolingAdapter, MultiLanguageAdapter, ProjectInfo,
@@ -18,6 +19,14 @@ use thiserror::Error;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{error, info};
 use uuid::Uuid;
+
+pub mod supervisor;
+pub mod worker_dispatcher;
+pub mod workflow_scheduler;
+
+pub use supervisor::*;
+pub use worker_dispatcher::*;
+pub use workflow_scheduler::*;
 
 #[derive(Error, Debug)]
 pub enum RuntimeError {
@@ -117,6 +126,11 @@ pub struct RuntimeHost {
     verifier: Arc<ActionVerifier>,
     provider: Arc<RwLock<Option<Arc<dyn ModelProvider>>>>,
     optimizer: Arc<TokenOptimizer>,
+    agent_registry: Arc<RwLock<AgentRegistry>>,
+    artifact_store: Arc<SharedArtifactStore>,
+    lock_manager: Arc<ResourceLockManager>,
+    supervisor: Arc<SupervisorEngine>,
+    workflow_scheduler: Arc<WorkflowScheduler>,
     active_tasks: Arc<RwLock<HashMap<Uuid, TaskControl>>>,
     event_bus: broadcast::Sender<(Uuid, AgentEvent)>,
 }
@@ -148,6 +162,31 @@ impl RuntimeHost {
             )));
         }
 
+        let agent_registry = Arc::new(RwLock::new(AgentRegistry::new()));
+        let artifact_store = Arc::new(SharedArtifactStore::new());
+        let lock_manager = Arc::new(ResourceLockManager::new());
+        let supervisor = Arc::new(SupervisorEngine::new(provider_opt.clone()));
+
+        let dispatcher = Arc::new(WorkerDispatcher::new(
+            config.workspace_path.clone(),
+            security.clone(),
+            registry.clone(),
+            artifact_store.clone(),
+            lock_manager.clone(),
+            mcp_manager.clone(),
+            browser_mcp.clone(),
+            verifier.clone(),
+        ));
+
+        let workflow_scheduler = Arc::new(WorkflowScheduler::new(
+            database.clone(),
+            dispatcher,
+            supervisor.clone(),
+            agent_registry.clone(),
+            artifact_store.clone(),
+            lock_manager.clone(),
+        ));
+
         let (event_bus, _) = broadcast::channel(500);
 
         let host = Self {
@@ -161,11 +200,36 @@ impl RuntimeHost {
             verifier,
             provider: Arc::new(RwLock::new(provider_opt)),
             optimizer,
+            agent_registry,
+            artifact_store,
+            lock_manager,
+            supervisor,
+            workflow_scheduler,
             active_tasks: Arc::new(RwLock::new(HashMap::new())),
             event_bus,
         };
 
         Ok(host)
+    }
+
+    pub fn workflow_scheduler(&self) -> &Arc<WorkflowScheduler> {
+        &self.workflow_scheduler
+    }
+
+    pub fn agent_registry(&self) -> &Arc<RwLock<AgentRegistry>> {
+        &self.agent_registry
+    }
+
+    pub fn artifact_store(&self) -> &Arc<SharedArtifactStore> {
+        &self.artifact_store
+    }
+
+    pub fn lock_manager(&self) -> &Arc<ResourceLockManager> {
+        &self.lock_manager
+    }
+
+    pub fn supervisor(&self) -> &Arc<SupervisorEngine> {
+        &self.supervisor
     }
 
     pub fn subscribe_events(&self) -> broadcast::Receiver<(Uuid, AgentEvent)> {

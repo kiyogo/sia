@@ -10,6 +10,7 @@ import { Workspace } from './components/Workspace';
 import { CodingWorkspace } from './components/CodingWorkspace';
 import { ComputerControl } from './components/ComputerControl';
 import { BrowserWorkspace } from './components/BrowserWorkspace';
+import { WorkflowOrchestrator } from './components/WorkflowOrchestrator';
 import { TerminalView } from './components/TerminalView';
 import { Settings } from './components/Settings';
 import { ApprovalDialog } from './components/ApprovalDialog';
@@ -95,6 +96,7 @@ export const App: React.FC = () => {
           {currentView === 'browser' && (
             <BrowserWorkspace workspacePath={stats?.workspace_path || 'C:\\workspace'} />
           )}
+          {currentView === 'workflows' && <WorkflowOrchestrator />}
           {currentView === 'workspace' && <Workspace />}
           {currentView === 'terminal' && <TerminalView />}
           {currentView === 'settings' && <Settings />}

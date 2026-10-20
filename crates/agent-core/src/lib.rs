@@ -3,6 +3,7 @@ pub mod coding_loop;
 pub mod diagnostics;
 pub mod error;
 pub mod model;
+pub mod orchestration;
 pub mod token_optimizer;
 pub mod tool_router;
 pub mod verifier;
@@ -15,6 +16,7 @@ pub use model::{
     ChatMessage, FunctionCall, MockModelProvider, ModelProvider, ModelRequest, ModelResponse,
     ModelUsage, OpenAiCompatibleProvider, ToolCall,
 };
+pub use orchestration::*;
 pub use token_optimizer::{ContextBudgetConfig, TokenOptimizer};
 pub use tool_router::{TaskStrategy, ToolStrategyRouter, ToolTier};
 pub use verifier::{ActionVerifier, VerificationOutcome, VerifyCondition};
@@ -196,5 +198,101 @@ mod tests {
         let delta = TokenOptimizer::compute_dom_delta(&node1, &node2);
         assert!(delta.contains("changed/added nodes"));
         assert!(delta.contains("Submitted!"));
+    }
+
+    #[tokio::test]
+    async fn test_task_dag_validation_and_resolution() {
+        let mut dag = TaskDag::new();
+        let t1 = Uuid::new_v4();
+        let t2 = Uuid::new_v4();
+        let t3 = Uuid::new_v4();
+
+        dag.add_node(DagNode {
+            task_id: t1,
+            title: "Task 1".to_string(),
+            description: "Desc".to_string(),
+            assigned_agent: AgentType::Coding,
+            priority: 10,
+            inputs: serde_json::json!({}),
+            acceptance_criteria: "".to_string(),
+        }).expect("add t1");
+
+        dag.add_node(DagNode {
+            task_id: t2,
+            title: "Task 2".to_string(),
+            description: "Desc".to_string(),
+            assigned_agent: AgentType::Browser,
+            priority: 5,
+            inputs: serde_json::json!({}),
+            acceptance_criteria: "".to_string(),
+        }).expect("add t2");
+
+        dag.add_node(DagNode {
+            task_id: t3,
+            title: "Task 3".to_string(),
+            description: "Desc".to_string(),
+            assigned_agent: AgentType::Supervisor,
+            priority: 1,
+            inputs: serde_json::json!({}),
+            acceptance_criteria: "".to_string(),
+        }).expect("add t3");
+
+        // t2 depends on t1, t3 depends on t2
+        dag.add_edge(t1, t2, "Success").expect("t1->t2");
+        dag.add_edge(t2, t3, "Success").expect("t2->t3");
+
+        // Topological sort
+        let order = dag.topological_sort().expect("topo sort");
+        assert_eq!(order, vec![t1, t2, t3]);
+
+        // Ready tasks initially: only t1 has no prereqs
+        let completed = std::collections::HashSet::new();
+        let in_progress = std::collections::HashSet::new();
+        let ready = dag.get_ready_tasks(&completed, &in_progress);
+        assert_eq!(ready, vec![t1]);
+
+        // Complete t1 -> t2 becomes ready
+        let mut completed = std::collections::HashSet::new();
+        completed.insert(t1);
+        let ready = dag.get_ready_tasks(&completed, &in_progress);
+        assert_eq!(ready, vec![t2]);
+
+        // Cycle injection must fail validation
+        let cycle_err = dag.add_edge(t3, t1, "Success");
+        assert!(cycle_err.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_resource_lock_manager() {
+        let lock_mgr = ResourceLockManager::new();
+        let wf_id = Uuid::new_v4();
+        let task_id1 = Uuid::new_v4();
+        let task_id2 = Uuid::new_v4();
+
+        // Agent 1 acquires desktop
+        let lease1 = lock_mgr
+            .acquire_lease("desktop:primary", "ComputerAgent", wf_id, task_id1, 30)
+            .await
+            .expect("lease1");
+        assert_eq!(lease1.owner_agent, "ComputerAgent");
+
+        // Agent 2 trying to acquire desktop concurrently is rejected
+        let lease2_res = lock_mgr
+            .acquire_lease("desktop:primary", "AnotherAgent", wf_id, task_id2, 30)
+            .await;
+        assert!(lease2_res.is_err());
+
+        // File lock conflict test
+        let file_path = std::path::PathBuf::from("src/main.rs");
+        let token = lock_mgr.lock_file(&file_path, "CodingAgent1", task_id1).await.expect("lock file");
+        assert!(token > 0);
+
+        let conflict = lock_mgr.lock_file(&file_path, "CodingAgent2", task_id2).await;
+        assert!(conflict.is_err());
+
+        // Release file lock
+        lock_mgr.unlock_file(&file_path).await;
+        let lock_again = lock_mgr.lock_file(&file_path, "CodingAgent2", task_id2).await;
+        assert!(lock_again.is_ok());
     }
 }

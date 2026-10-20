@@ -439,6 +439,106 @@ async fn list_browser_tabs(state: State<'_, AppState>) -> Result<Value, String> 
     state.host.browser_mcp().list_tabs().await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn create_workflow(
+    title: String,
+    goal: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let budget = agent_core::WorkflowBudgetConfig::default();
+    let (wf_id, _dag) = state
+        .host
+        .workflow_scheduler()
+        .create_workflow(&title, &goal, budget)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(wf_id.to_string())
+}
+
+#[tauri::command]
+async fn list_workflows(state: State<'_, AppState>) -> Result<Vec<agent_storage::Workflow>, String> {
+    state.host.database().list_workflows().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn run_workflow(
+    workflow_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let id = Uuid::parse_str(&workflow_id).map_err(|e| e.to_string())?;
+    let status = state
+        .host
+        .workflow_scheduler()
+        .resume_workflow(id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(status.to_string())
+}
+
+#[tauri::command]
+async fn pause_workflow(
+    workflow_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let id = Uuid::parse_str(&workflow_id).map_err(|e| e.to_string())?;
+    Ok(state.host.workflow_scheduler().pause_workflow(id).await)
+}
+
+#[tauri::command]
+async fn cancel_workflow(
+    workflow_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let id = Uuid::parse_str(&workflow_id).map_err(|e| e.to_string())?;
+    Ok(state.host.workflow_scheduler().cancel_workflow(id).await)
+}
+
+#[tauri::command]
+async fn list_workflow_tasks(
+    workflow_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<agent_storage::WorkflowTask>, String> {
+    let id = Uuid::parse_str(&workflow_id).map_err(|e| e.to_string())?;
+    state.host.database().list_workflow_tasks(id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_workflow_artifacts(
+    workflow_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<agent_storage::SharedArtifact>, String> {
+    let id = Uuid::parse_str(&workflow_id).map_err(|e| e.to_string())?;
+    state.host.database().list_shared_artifacts(id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_registered_agents(
+    state: State<'_, AppState>,
+) -> Result<Vec<agent_core::AgentDefinition>, String> {
+    let reg = state.host.agent_registry().read().await;
+    Ok(reg.list_agents())
+}
+
+#[tauri::command]
+async fn toggle_agent_status(
+    agent_id: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let mut reg = state.host.agent_registry().write().await;
+    Ok(reg.set_enabled(&agent_id, enabled))
+}
+
+#[tauri::command]
+async fn set_agent_concurrency(
+    agent_id: String,
+    limit: usize,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let mut reg = state.host.agent_registry().write().await;
+    Ok(reg.set_concurrency(&agent_id, limit))
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -534,7 +634,17 @@ async fn main() {
             get_browser_snapshot,
             click_browser_element,
             fill_browser_element,
-            list_browser_tabs
+            list_browser_tabs,
+            create_workflow,
+            list_workflows,
+            run_workflow,
+            pause_workflow,
+            cancel_workflow,
+            list_workflow_tasks,
+            list_workflow_artifacts,
+            list_registered_agents,
+            toggle_agent_status,
+            set_agent_concurrency
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -9,6 +9,7 @@ import {
   Terminal,
   Monitor,
   Globe,
+  Network,
   Settings,
   Activity,
   Cpu,
@@ -38,6 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'coding', label: 'Coding Agent', icon: <Code2 className="w-5 h-5" /> },
     { id: 'computer', label: 'Computer Control', icon: <Monitor className="w-5 h-5" /> },
     { id: 'browser', label: 'Browser Agent', icon: <Globe className="w-5 h-5" /> },
+    { id: 'workflows', label: 'Multi-Agent', icon: <Network className="w-5 h-5" /> },
     { id: 'workspace', label: 'Workspace', icon: <FolderTree className="w-5 h-5" /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal className="w-5 h-5" /> },
     {
