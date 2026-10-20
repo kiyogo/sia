@@ -1,0 +1,21 @@
+# Rust build
+/target
+Cargo.lock
+
+# Node / Frontend
+**/node_modules
+**/dist
+**/.pnpm-store
+
+# SQLite & Runtime data
+*.db
+*.db-wal
+*.db-shm
+default_workspace/
+
+# IDE & OS
+.vscode/
+.idea/
+*.suo
+*.user
+Thumbs.db
