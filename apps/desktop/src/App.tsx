@@ -8,6 +8,8 @@ import { Chat } from './components/Chat';
 import { Tasks } from './components/Tasks';
 import { Workspace } from './components/Workspace';
 import { CodingWorkspace } from './components/CodingWorkspace';
+import { ComputerControl } from './components/ComputerControl';
+import { BrowserWorkspace } from './components/BrowserWorkspace';
 import { TerminalView } from './components/TerminalView';
 import { Settings } from './components/Settings';
 import { ApprovalDialog } from './components/ApprovalDialog';
@@ -87,6 +89,12 @@ export const App: React.FC = () => {
           {currentView === 'chat' && <Chat onTaskStarted={() => refreshData()} />}
           {currentView === 'tasks' && <Tasks />}
           {currentView === 'coding' && <CodingWorkspace />}
+          {currentView === 'computer' && (
+            <ComputerControl workspacePath={stats?.workspace_path || 'C:\\workspace'} />
+          )}
+          {currentView === 'browser' && (
+            <BrowserWorkspace workspacePath={stats?.workspace_path || 'C:\\workspace'} />
+          )}
           {currentView === 'workspace' && <Workspace />}
           {currentView === 'terminal' && <TerminalView />}
           {currentView === 'settings' && <Settings />}

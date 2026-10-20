@@ -1,14 +1,13 @@
 use agent_core::{
-    AgentEvent, AgentLoop, CodingMode, CodingWorkflowEngine, ContextBudgetConfig, ModelProvider,
-    OpenAiCompatibleProvider, TokenOptimizer,
+    ActionVerifier, AgentEvent, AgentLoop, CodingMode, CodingWorkflowEngine, ContextBudgetConfig,
+    ModelProvider, OpenAiCompatibleProvider, TokenOptimizer, ToolStrategyRouter,
 };
 use agent_platform::{
-    get_platform_adapters, LanguageToolingAdapter, MultiLanguageAdapter, OperatingSystemAdapter,
-    ProjectInfo,
+    get_platform_adapters, LanguageToolingAdapter, MultiLanguageAdapter, ProjectInfo,
 };
 use agent_security::{PermissionMode, SecurityEngine, SharedSecurityEngine};
-use agent_storage::{Checkpoint, Database, Task, TaskStatus};
-use agent_tools::{create_default_registry, SharedToolRegistry, WindowsMcpManager};
+use agent_storage::{Database, Task, TaskStatus};
+use agent_tools::{create_default_registry, BrowserMcpManager, SharedToolRegistry, WindowsMcpManager};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{broadcast, RwLock};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 #[derive(Error, Debug)]
@@ -79,6 +78,10 @@ pub struct DashboardStats {
     pub windows_mcp_connected: bool,
     pub windows_mcp_prerequisites: bool,
     pub windows_mcp_hint: String,
+    pub browser_connected: bool,
+    pub desktop_controller: String,
+    pub desktop_remaining_secs: i64,
+    pub is_emergency_stopped: bool,
     pub tasks_running: u32,
     pub tasks_completed: u32,
     pub tasks_failed: u32,
@@ -109,6 +112,9 @@ pub struct RuntimeHost {
     security: SharedSecurityEngine,
     registry: SharedToolRegistry,
     mcp_manager: Arc<WindowsMcpManager>,
+    browser_mcp: Arc<BrowserMcpManager>,
+    tool_router: Arc<ToolStrategyRouter>,
+    verifier: Arc<ActionVerifier>,
     provider: Arc<RwLock<Option<Arc<dyn ModelProvider>>>>,
     optimizer: Arc<TokenOptimizer>,
     active_tasks: Arc<RwLock<HashMap<Uuid, TaskControl>>>,
@@ -118,7 +124,7 @@ pub struct RuntimeHost {
 impl RuntimeHost {
     pub async fn new<P: AsRef<Path>>(db_path: P, config: RuntimeConfig) -> RuntimeResult<Self> {
         let database = Database::open(db_path)?;
-        let (os_adapter, shell_executor, fs_provider) = get_platform_adapters();
+        let (_os_adapter, shell_executor, fs_provider) = get_platform_adapters();
 
         let security = Arc::new(SecurityEngine::new(
             config.workspace_path.clone(),
@@ -128,6 +134,9 @@ impl RuntimeHost {
 
         let registry = Arc::new(create_default_registry(shell_executor, security.clone()));
         let mcp_manager = Arc::new(WindowsMcpManager::new(security.clone()));
+        let browser_mcp = Arc::new(BrowserMcpManager::new(security.clone()));
+        let tool_router = Arc::new(ToolStrategyRouter::new());
+        let verifier = Arc::new(ActionVerifier::new());
         let optimizer = Arc::new(TokenOptimizer::new(config.budget_config.clone()));
 
         let mut provider_opt: Option<Arc<dyn ModelProvider>> = None;
@@ -147,6 +156,9 @@ impl RuntimeHost {
             security,
             registry,
             mcp_manager,
+            browser_mcp,
+            tool_router,
+            verifier,
             provider: Arc::new(RwLock::new(provider_opt)),
             optimizer,
             active_tasks: Arc::new(RwLock::new(HashMap::new())),
@@ -174,6 +186,18 @@ impl RuntimeHost {
 
     pub fn mcp_manager(&self) -> &Arc<WindowsMcpManager> {
         &self.mcp_manager
+    }
+
+    pub fn browser_mcp(&self) -> &Arc<BrowserMcpManager> {
+        &self.browser_mcp
+    }
+
+    pub fn tool_router(&self) -> &Arc<ToolStrategyRouter> {
+        &self.tool_router
+    }
+
+    pub fn verifier(&self) -> &Arc<ActionVerifier> {
+        &self.verifier
     }
 
     pub async fn update_config(&self, new_cfg: RuntimeConfig) {
@@ -205,7 +229,7 @@ impl RuntimeHost {
         let all_tasks = self.database.list_tasks().await?;
         let mut recovered = Vec::new();
 
-        for mut task in all_tasks {
+        for task in all_tasks {
             // Find tasks that were in progress when app stopped
             if task.status == TaskStatus::Running || task.status == TaskStatus::WaitingApproval {
                 let latest_ck = self.database.get_latest_checkpoint(task.id).await?;
@@ -262,6 +286,9 @@ impl RuntimeHost {
             }
         };
 
+        let browser_connected = self.browser_mcp.is_connected().await;
+        let ownership_report = self.security.ownership().get_ownership_status().await;
+
         Ok(DashboardStats {
             runtime_active: true,
             provider_connected,
@@ -270,6 +297,10 @@ impl RuntimeHost {
             windows_mcp_connected: mcp_connected,
             windows_mcp_prerequisites: prereq_ok,
             windows_mcp_hint: prereq_hint,
+            browser_connected,
+            desktop_controller: format!("{:?}", ownership_report.current_controller),
+            desktop_remaining_secs: ownership_report.remaining_secs,
+            is_emergency_stopped: ownership_report.is_emergency_stopped,
             tasks_running: running_count,
             tasks_completed: completed_count,
             tasks_failed: failed_count,
@@ -553,6 +584,7 @@ impl RuntimeHost {
 mod tests {
     use super::*;
     use agent_core::MockModelProvider;
+    use agent_storage::Checkpoint;
     use tempfile::tempdir;
 
     #[tokio::test]

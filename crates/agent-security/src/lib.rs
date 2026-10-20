@@ -25,6 +25,9 @@ pub enum SecurityError {
 
     #[error("Emergency stop is active")]
     EmergencyStopActive,
+
+    #[error("Desktop ownership denied: {0}")]
+    DesktopOwnershipDenied(String),
 }
 
 pub type SecurityResult<T> = Result<T, SecurityError>;
@@ -34,6 +37,7 @@ pub enum PermissionTier {
     ReadOnly,
     WorkspaceWrite,
     ShellExecution,
+    BrowserAutomation,
     DesktopControl,
     DestructiveAction,
     ExternalSideEffect,
@@ -64,23 +68,187 @@ pub struct ApprovalRequest {
     pub resolved_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ControllerRole {
+    None,
+    User,
+    Agent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentLease {
+    pub id: Uuid,
+    pub agent_name: String,
+    pub acquired_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnershipStatusReport {
+    pub current_controller: ControllerRole,
+    pub active_lease: Option<AgentLease>,
+    pub remaining_secs: i64,
+    pub is_emergency_stopped: bool,
+}
+
+pub struct DesktopOwnershipManager {
+    current_controller: RwLock<ControllerRole>,
+    active_lease: RwLock<Option<AgentLease>>,
+    emergency_stop: Arc<AtomicBool>,
+}
+
+impl DesktopOwnershipManager {
+    pub fn new(emergency_stop: Arc<AtomicBool>) -> Self {
+        Self {
+            current_controller: RwLock::new(ControllerRole::None),
+            active_lease: RwLock::new(None),
+            emergency_stop,
+        }
+    }
+
+    pub async fn acquire_lease(&self, agent_name: &str, duration_secs: u64) -> SecurityResult<Uuid> {
+        if self.emergency_stop.load(Ordering::SeqCst) {
+            return Err(SecurityError::EmergencyStopActive);
+        }
+
+        let mut controller = self.current_controller.write().await;
+        if *controller == ControllerRole::User {
+            return Err(SecurityError::DesktopOwnershipDenied(
+                "Desktop is currently controlled by the human user. AI control lease rejected.".to_string(),
+            ));
+        }
+
+        let now = Utc::now();
+        let expires_at = now + chrono::Duration::seconds(duration_secs as i64);
+        let lease_id = Uuid::new_v4();
+
+        let lease = AgentLease {
+            id: lease_id,
+            agent_name: agent_name.to_string(),
+            acquired_at: now,
+            expires_at,
+            is_active: true,
+        };
+
+        let mut lease_slot = self.active_lease.write().await;
+        *lease_slot = Some(lease);
+        *controller = ControllerRole::Agent;
+
+        Ok(lease_id)
+    }
+
+    pub async fn renew_lease(&self, lease_id: Uuid, duration_secs: u64) -> bool {
+        if self.emergency_stop.load(Ordering::SeqCst) {
+            return false;
+        }
+
+        let mut lease_slot = self.active_lease.write().await;
+        if let Some(ref mut lease) = *lease_slot {
+            if lease.id == lease_id && lease.is_active {
+                lease.expires_at = Utc::now() + chrono::Duration::seconds(duration_secs as i64);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub async fn release_lease(&self, lease_id: Uuid) -> bool {
+        let mut lease_slot = self.active_lease.write().await;
+        let mut controller = self.current_controller.write().await;
+
+        if let Some(ref lease) = *lease_slot {
+            if lease.id == lease_id {
+                *lease_slot = None;
+                *controller = ControllerRole::None;
+                return true;
+            }
+        }
+        false
+    }
+
+    pub async fn user_takeover(&self) {
+        let mut controller = self.current_controller.write().await;
+        let mut lease_slot = self.active_lease.write().await;
+
+        if let Some(ref mut lease) = *lease_slot {
+            lease.is_active = false;
+        }
+        *lease_slot = None;
+        *controller = ControllerRole::User;
+    }
+
+    pub async fn release_user_control(&self) {
+        let mut controller = self.current_controller.write().await;
+        if *controller == ControllerRole::User {
+            *controller = ControllerRole::None;
+        }
+    }
+
+    pub async fn is_agent_controlling(&self) -> bool {
+        if self.emergency_stop.load(Ordering::SeqCst) {
+            return false;
+        }
+
+        let controller = self.current_controller.read().await;
+        if *controller != ControllerRole::Agent {
+            return false;
+        }
+
+        let lease_slot = self.active_lease.read().await;
+        if let Some(ref lease) = *lease_slot {
+            lease.is_active && lease.expires_at > Utc::now()
+        } else {
+            false
+        }
+    }
+
+    pub async fn get_ownership_status(&self) -> OwnershipStatusReport {
+        let is_stopped = self.emergency_stop.load(Ordering::SeqCst);
+        let controller = *self.current_controller.read().await;
+        let lease_slot = self.active_lease.read().await;
+
+        let remaining_secs = if let Some(ref lease) = *lease_slot {
+            let rem = (lease.expires_at - Utc::now()).num_seconds();
+            if rem > 0 { rem } else { 0 }
+        } else {
+            0
+        };
+
+        OwnershipStatusReport {
+            current_controller: controller,
+            active_lease: lease_slot.clone(),
+            remaining_secs,
+            is_emergency_stopped: is_stopped,
+        }
+    }
+}
+
 pub struct SecurityEngine {
     workspace_root: RwLock<PathBuf>,
     mode: RwLock<PermissionMode>,
-    emergency_stop: AtomicBool,
+    emergency_stop: Arc<AtomicBool>,
     pending_approvals: RwLock<HashMap<Uuid, ApprovalRequest>>,
     fs_provider: Box<dyn FileSystemProvider>,
+    ownership: Arc<DesktopOwnershipManager>,
 }
 
 impl SecurityEngine {
     pub fn new(workspace_root: PathBuf, mode: PermissionMode, fs_provider: Box<dyn FileSystemProvider>) -> Self {
+        let emergency_stop = Arc::new(AtomicBool::new(false));
+        let ownership = Arc::new(DesktopOwnershipManager::new(emergency_stop.clone()));
         Self {
             workspace_root: RwLock::new(workspace_root),
             mode: RwLock::new(mode),
-            emergency_stop: AtomicBool::new(false),
+            emergency_stop,
             pending_approvals: RwLock::new(HashMap::new()),
             fs_provider,
+            ownership,
         }
+    }
+
+    pub fn ownership(&self) -> Arc<DesktopOwnershipManager> {
+        self.ownership.clone()
     }
 
     pub fn trigger_emergency_stop(&self) {
@@ -139,18 +307,27 @@ impl SecurityEngine {
             }
         }
 
+        // Validate desktop ownership lease for desktop control
+        if tier == PermissionTier::DesktopControl {
+            if !self.ownership.is_agent_controlling().await {
+                return Err(SecurityError::DesktopOwnershipDenied(
+                    "Agent does not currently hold an active desktop ownership lease. Call acquire_lease first.".to_string(),
+                ));
+            }
+        }
+
         let mode = *self.mode.read().await;
 
         match (mode, tier) {
             (_, PermissionTier::ReadOnly) => Ok(()),
-            (PermissionMode::FullAuto, PermissionTier::WorkspaceWrite | PermissionTier::ShellExecution) => {
+            (PermissionMode::FullAuto, PermissionTier::WorkspaceWrite | PermissionTier::ShellExecution | PermissionTier::BrowserAutomation | PermissionTier::DesktopControl) => {
                 // If shell execution is destructive, enforce approval
                 if tier == PermissionTier::ShellExecution && Self::is_dangerous_command(&description) {
                     return self.request_approval(tier, description, details).await;
                 }
                 Ok(())
             }
-            (PermissionMode::WorkspaceAuto, PermissionTier::WorkspaceWrite) => Ok(()),
+            (PermissionMode::WorkspaceAuto, PermissionTier::WorkspaceWrite | PermissionTier::BrowserAutomation) => Ok(()),
             _ => self.request_approval(tier, description, details).await,
         }
     }
@@ -273,5 +450,48 @@ mod tests {
             .check_permission(PermissionTier::ReadOnly, "read", None, serde_json::json!({}))
             .await;
         assert!(matches!(err, Err(SecurityError::EmergencyStopActive)));
+    }
+
+    #[tokio::test]
+    async fn test_desktop_ownership_lease_and_takeover() {
+        let root = PathBuf::from(r"C:\workspace\myproject");
+        let fs = Box::new(WindowsFileSystemProvider::new());
+        let sec = SecurityEngine::new(root, PermissionMode::FullAuto, fs);
+
+        // Before lease: DesktopControl is denied
+        let err = sec
+            .check_permission(PermissionTier::DesktopControl, "click button", None, serde_json::json!({}))
+            .await;
+        assert!(matches!(err, Err(SecurityError::DesktopOwnershipDenied(_))));
+
+        // Acquire lease
+        let _lease_id = sec.ownership().acquire_lease("Agent_A", 10).await.unwrap();
+        assert!(sec.ownership().is_agent_controlling().await);
+
+        // With lease: DesktopControl succeeds in FullAuto
+        assert!(sec
+            .check_permission(PermissionTier::DesktopControl, "click button", None, serde_json::json!({}))
+            .await
+            .is_ok());
+
+        // User takeover
+        sec.ownership().user_takeover().await;
+        assert!(!sec.ownership().is_agent_controlling().await);
+
+        // Subsequent AI action is rejected
+        let err2 = sec
+            .check_permission(PermissionTier::DesktopControl, "type text", None, serde_json::json!({}))
+            .await;
+        assert!(matches!(err2, Err(SecurityError::DesktopOwnershipDenied(_))));
+
+        // Re-acquiring lease fails while user is controlling
+        let err3 = sec.ownership().acquire_lease("Agent_A", 10).await;
+        assert!(err3.is_err());
+
+        // User releases control
+        sec.ownership().release_user_control().await;
+        let lease_id2 = sec.ownership().acquire_lease("Agent_A", 10).await.unwrap();
+        assert!(sec.ownership().release_lease(lease_id2).await);
+        assert!(!sec.ownership().is_agent_controlling().await);
     }
 }

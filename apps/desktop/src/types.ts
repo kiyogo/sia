@@ -1,6 +1,32 @@
-export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'workspace' | 'coding' | 'terminal' | 'settings';
+export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'coding' | 'computer' | 'browser' | 'workspace' | 'terminal' | 'settings';
 
 export type CodingMode = 'Ask' | 'Plan' | 'Build';
+
+export interface WindowInfo {
+  id: string;
+  title: string;
+  process_name: string;
+  is_active: boolean;
+}
+
+export interface OwnershipStatusReport {
+  current_controller: 'None' | 'User' | 'Agent';
+  active_lease?: {
+    id: string;
+    agent_name: string;
+    expires_at: string;
+    is_active: boolean;
+  };
+  remaining_secs: number;
+  is_emergency_stopped: boolean;
+}
+
+export interface BrowserTabInfo {
+  id: string;
+  title: string;
+  url: string;
+  is_active: boolean;
+}
 
 export interface DiagnosticMessage {
   file: string;
@@ -38,7 +64,7 @@ export interface ProjectInfo {
 
 export type TaskStatus = 'Pending' | 'Running' | 'WaitingApproval' | 'Paused' | 'Completed' | 'Failed' | 'Cancelled';
 
-export type PermissionTier = 'ReadOnly' | 'WorkspaceWrite' | 'ShellExecution' | 'DesktopControl' | 'DestructiveAction' | 'ExternalSideEffect';
+export type PermissionTier = 'ReadOnly' | 'WorkspaceWrite' | 'ShellExecution' | 'BrowserAutomation' | 'DesktopControl' | 'DestructiveAction' | 'ExternalSideEffect';
 
 export type PermissionMode = 'Strict' | 'WorkspaceAuto' | 'FullAuto';
 
@@ -50,6 +76,10 @@ export interface DashboardStats {
   windows_mcp_connected: boolean;
   windows_mcp_prerequisites: boolean;
   windows_mcp_hint: string;
+  browser_connected: boolean;
+  desktop_controller: string;
+  desktop_remaining_secs: number;
+  is_emergency_stopped: boolean;
   tasks_running: number;
   tasks_completed: number;
   tasks_failed: number;

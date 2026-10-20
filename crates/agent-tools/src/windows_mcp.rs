@@ -3,11 +3,10 @@ use crate::types::{Tool, ToolDefinition, ToolError, ToolExecutionResult, ToolRes
 use agent_platform::{OperatingSystemAdapter, WindowsOperatingSystemAdapter};
 use agent_security::{PermissionTier, SharedSecurityEngine};
 use async_trait::async_trait;
-use serde_json::json;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::info;
 
 pub struct WindowsMcpManager {
     client: Arc<RwLock<Option<McpClient>>>,
@@ -61,7 +60,20 @@ impl WindowsMcpManager {
         let (cmd, args_vec) = if let Some((c, a)) = custom_command {
             (c.to_string(), a)
         } else {
-            ("uv".to_string(), vec!["run".to_string(), "--with".to_string(), "windows-mcp".to_string(), "windows-mcp".to_string()])
+            (
+                "uv".to_string(),
+                vec![
+                    "run".to_string(),
+                    "--python".to_string(),
+                    "3.14".to_string(),
+                    "--with".to_string(),
+                    "windows-mcp".to_string(),
+                    "python".to_string(),
+                    "-m".to_string(),
+                    "windows_mcp".to_string(),
+                    "serve".to_string(),
+                ],
+            )
         };
 
         let args_refs: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
@@ -103,6 +115,106 @@ impl WindowsMcpManager {
         })?;
 
         client.call_tool(tool_name, arguments).await
+    }
+
+    pub async fn launch_app(&self, app: &str) -> ToolResult<serde_json::Value> {
+        self.security
+            .check_permission(
+                PermissionTier::DesktopControl,
+                &format!("Launch desktop application '{app}'"),
+                None,
+                serde_json::json!({ "app": app }),
+            )
+            .await
+            .map_err(ToolError::Security)?;
+
+        self.call_raw("App", serde_json::json!({
+            "mode": "launch",
+            "name": app
+        })).await
+    }
+
+    pub async fn switch_window(&self, title: &str) -> ToolResult<serde_json::Value> {
+        self.security
+            .check_permission(
+                PermissionTier::DesktopControl,
+                &format!("Switch window to '{title}'"),
+                None,
+                serde_json::json!({ "title": title }),
+            )
+            .await
+            .map_err(ToolError::Security)?;
+
+        self.call_raw("App", serde_json::json!({
+            "mode": "switch",
+            "name": title
+        })).await
+    }
+
+    pub async fn click(&self, x: i32, y: i32, button: &str, click_type: u32) -> ToolResult<serde_json::Value> {
+        self.security
+            .check_permission(
+                PermissionTier::DesktopControl,
+                &format!("Mouse click at [{x}, {y}] with {button}"),
+                None,
+                serde_json::json!({ "x": x, "y": y, "button": button, "clicks": click_type }),
+            )
+            .await
+            .map_err(ToolError::Security)?;
+
+        self.call_raw("Click", serde_json::json!({
+            "loc": [x, y],
+            "button": button,
+            "clicks": click_type
+        })).await
+    }
+
+    pub async fn type_text(&self, text: &str, clear: bool, press_enter: bool) -> ToolResult<serde_json::Value> {
+        self.security
+            .check_permission(
+                PermissionTier::DesktopControl,
+                &format!("Type text (length: {})", text.len()),
+                None,
+                serde_json::json!({ "clear": clear, "press_enter": press_enter }),
+            )
+            .await
+            .map_err(ToolError::Security)?;
+
+        self.call_raw("Type", serde_json::json!({
+            "text": text,
+            "clear": clear,
+            "press_enter": press_enter
+        })).await
+    }
+
+    pub async fn shortcut(&self, combo: &str) -> ToolResult<serde_json::Value> {
+        self.security
+            .check_permission(
+                PermissionTier::DesktopControl,
+                &format!("Dispatch shortcut key '{combo}'"),
+                None,
+                serde_json::json!({ "keys": combo }),
+            )
+            .await
+            .map_err(ToolError::Security)?;
+
+        self.call_raw("Shortcut", serde_json::json!({
+            "keys": combo
+        })).await
+    }
+
+    pub async fn snapshot(&self, use_vision: bool) -> ToolResult<serde_json::Value> {
+        self.call_raw("Snapshot", serde_json::json!({
+            "use_vision": use_vision
+        })).await
+    }
+
+    pub async fn screenshot(&self) -> ToolResult<serde_json::Value> {
+        self.call_raw("Screenshot", serde_json::json!({})).await
+    }
+
+    pub async fn get_control_status(&self) -> ToolResult<serde_json::Value> {
+        self.call_raw("ControlStatus", serde_json::json!({})).await
     }
 }
 

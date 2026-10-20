@@ -4,6 +4,8 @@ pub mod diagnostics;
 pub mod error;
 pub mod model;
 pub mod token_optimizer;
+pub mod tool_router;
+pub mod verifier;
 
 pub use agent_loop::{AgentEvent, AgentLoop};
 pub use coding_loop::{CodingMode, CodingWorkflowEngine};
@@ -14,6 +16,8 @@ pub use model::{
     ModelUsage, OpenAiCompatibleProvider, ToolCall,
 };
 pub use token_optimizer::{ContextBudgetConfig, TokenOptimizer};
+pub use tool_router::{TaskStrategy, ToolStrategyRouter, ToolTier};
+pub use verifier::{ActionVerifier, VerificationOutcome, VerifyCondition};
 
 #[cfg(test)]
 mod tests {
@@ -72,7 +76,7 @@ mod tests {
         };
 
         let provider = Arc::new(MockModelProvider::new(vec![turn1, turn2]));
-        let (agent, mut rx) = AgentLoop::new(provider, registry, sec, db.clone(), optimizer, 5);
+        let (agent, _rx) = AgentLoop::new(provider, registry, sec, db.clone(), optimizer, 5);
 
         let mut task = Task {
             id: Uuid::new_v4(),
@@ -104,5 +108,93 @@ mod tests {
 
         let ck = db.get_latest_checkpoint(task.id).await.expect("ck").expect("has ck");
         assert!(ck.summary.contains("Completed"));
+    }
+
+    #[test]
+    fn test_tool_strategy_router_selection() {
+        let router = ToolStrategyRouter::new();
+
+        // Web task -> Tier 4
+        let web_strategy = router.route("Navigate to https://example.com and check header");
+        assert_eq!(web_strategy.tier, ToolTier::Tier4BrowserPlaywright);
+        assert!(web_strategy.recommended_tools.iter().any(|t| t.contains("playwright")));
+
+        // Desktop task -> Tier 5
+        let desktop_strategy = router.route("Open notepad and type test message");
+        assert_eq!(desktop_strategy.tier, ToolTier::Tier5WindowsUiAutomation);
+        assert!(desktop_strategy.recommended_tools.iter().any(|t| t.contains("windows_mcp")));
+
+        // File task -> Tier 2
+        let file_strategy = router.route("Read file src/main.rs and list directory");
+        assert_eq!(file_strategy.tier, ToolTier::Tier2FilesystemDb);
+
+        // Build task -> Tier 3
+        let build_strategy = router.route("Run cargo test and compile build");
+        assert_eq!(build_strategy.tier, ToolTier::Tier3ShellCliCoding);
+
+        // Screenshot task -> Tier 6
+        let vision_strategy = router.route("Take a screenshot of current screen");
+        assert_eq!(vision_strategy.tier, ToolTier::Tier6VisionScreenshot);
+    }
+
+    #[test]
+    fn test_action_verifier_conditions() {
+        let verifier = ActionVerifier::new();
+
+        // 1. URL condition
+        let url_cond = VerifyCondition::UrlMatches {
+            expected_pattern: "dashboard".to_string(),
+        };
+        let outcome1 = verifier.verify(&url_cond, &serde_json::json!({ "url": "https://myapp.com/dashboard/home" }));
+        assert!(outcome1.is_passed());
+
+        let outcome2 = verifier.verify(&url_cond, &serde_json::json!({ "url": "https://myapp.com/login" }));
+        assert!(!outcome2.is_passed());
+
+        // 2. Element condition
+        let el_cond = VerifyCondition::ElementVisible {
+            selector_or_text: "Welcome User".to_string(),
+        };
+        let outcome3 = verifier.verify(&el_cond, &serde_json::json!({ "snapshot": "<div><h1>Welcome User</h1></div>" }));
+        assert!(outcome3.is_passed());
+
+        // 3. Exit code condition
+        let outcome4 = verifier.verify(&VerifyCondition::ExitCodeZero, &serde_json::json!({ "exit_code": 0 }));
+        assert!(outcome4.is_passed());
+    }
+
+    #[test]
+    fn test_dom_token_optimization_and_delta() {
+        use agent_platform::DomSnapshotNode;
+        use std::collections::HashMap;
+
+        let node1 = DomSnapshotNode {
+            ref_id: "e1".to_string(),
+            tag: "button".to_string(),
+            role: Some("button".to_string()),
+            text: Some("Submit".to_string()),
+            value: None,
+            is_interactive: true,
+            attributes: HashMap::new(),
+            children: Vec::new(),
+        };
+
+        let node2 = DomSnapshotNode {
+            ref_id: "e1".to_string(),
+            tag: "button".to_string(),
+            role: Some("button".to_string()),
+            text: Some("Submitted!".to_string()),
+            value: None,
+            is_interactive: true,
+            attributes: HashMap::new(),
+            children: Vec::new(),
+        };
+
+        let compact = TokenOptimizer::dom_to_compact_text(&node1, 0);
+        assert!(compact.contains("[e1] button \"Submit\" [interactive]"));
+
+        let delta = TokenOptimizer::compute_dom_delta(&node1, &node2);
+        assert!(delta.contains("changed/added nodes"));
+        assert!(delta.contains("Submitted!"));
     }
 }

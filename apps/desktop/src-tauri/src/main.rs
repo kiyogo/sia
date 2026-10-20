@@ -1,19 +1,20 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use agent_core::{AgentEvent, ContextBudgetConfig};
-use agent_platform::{OperatingSystemAdapter, ProcessOutput, ShellType, WindowsOperatingSystemAdapter};
-use agent_security::{ApprovalRequest, PermissionMode, PermissionTier};
+use agent_platform::{
+    ComputerControlAdapter, OperatingSystemAdapter, ProcessOutput, WindowsComputerControlAdapter,
+    WindowsOperatingSystemAdapter,
+};
+use agent_security::{ApprovalRequest, PermissionTier};
 use agent_storage::{Checkpoint, Conversation, Message, Task};
-use agent_tools::{McpToolInfo, ToolDefinition};
+use agent_tools::ToolDefinition;
 use agent_runtime::{DashboardStats, RecoveredTaskInfo, RuntimeConfig, RuntimeHost};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
-use tokio::sync::RwLock;
-use tracing::{error, info};
+use tauri::{Emitter, State};
+use tracing::info;
 use uuid::Uuid;
 
 struct AppState {
@@ -348,6 +349,96 @@ async fn start_coding_task(
     Ok(task_id.to_string())
 }
 
+#[tauri::command]
+async fn get_ownership_status(state: State<'_, AppState>) -> Result<agent_security::OwnershipStatusReport, String> {
+    Ok(state.host.security().ownership().get_ownership_status().await)
+}
+
+#[tauri::command]
+async fn acquire_desktop_lease(agent_name: String, timeout_secs: u64, state: State<'_, AppState>) -> Result<String, String> {
+    state.host.security().ownership().acquire_lease(&agent_name, timeout_secs).await.map(|id| id.to_string()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn release_desktop_lease(lease_id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let id = Uuid::parse_str(&lease_id).map_err(|e| e.to_string())?;
+    Ok(state.host.security().ownership().release_lease(id).await)
+}
+
+#[tauri::command]
+async fn user_takeover_desktop(state: State<'_, AppState>) -> Result<(), String> {
+    state.host.security().ownership().user_takeover().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn release_user_control_desktop(state: State<'_, AppState>) -> Result<(), String> {
+    state.host.security().ownership().release_user_control().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_desktop_windows() -> Result<Vec<agent_platform::WindowInfo>, String> {
+    let adapter = WindowsComputerControlAdapter::new();
+    adapter.list_windows().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn switch_desktop_window(title: String) -> Result<bool, String> {
+    let adapter = WindowsComputerControlAdapter::new();
+    adapter.switch_window(&title).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_desktop_lock_status() -> Result<String, String> {
+    let adapter = WindowsComputerControlAdapter::new();
+    let status = adapter.get_lock_status().await.map_err(|e| e.to_string())?;
+    Ok(format!("{:?}", status))
+}
+
+#[tauri::command]
+async fn take_desktop_screenshot() -> Result<String, String> {
+    let adapter = WindowsComputerControlAdapter::new();
+    let bytes = adapter.take_screenshot().await.map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+#[tauri::command]
+async fn connect_browser(state: State<'_, AppState>) -> Result<Vec<ToolDefinition>, String> {
+    state.host.browser_mcp().connect(None).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn disconnect_browser(state: State<'_, AppState>) -> Result<(), String> {
+    state.host.browser_mcp().disconnect().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn navigate_browser(url: String, state: State<'_, AppState>) -> Result<Value, String> {
+    state.host.browser_mcp().navigate(&url).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_browser_snapshot(state: State<'_, AppState>) -> Result<Value, String> {
+    state.host.browser_mcp().snapshot().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn click_browser_element(selector: String, state: State<'_, AppState>) -> Result<Value, String> {
+    state.host.browser_mcp().click(&selector).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn fill_browser_element(selector: String, value: String, state: State<'_, AppState>) -> Result<Value, String> {
+    state.host.browser_mcp().fill(&selector, &value).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_browser_tabs(state: State<'_, AppState>) -> Result<Value, String> {
+    state.host.browser_mcp().list_tabs().await.map_err(|e| e.to_string())
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -427,7 +518,23 @@ async fn main() {
             preview_diff,
             run_build,
             run_test,
-            start_coding_task
+            start_coding_task,
+            get_ownership_status,
+            acquire_desktop_lease,
+            release_desktop_lease,
+            user_takeover_desktop,
+            release_user_control_desktop,
+            list_desktop_windows,
+            switch_desktop_window,
+            get_desktop_lock_status,
+            take_desktop_screenshot,
+            connect_browser,
+            disconnect_browser,
+            navigate_browser,
+            get_browser_snapshot,
+            click_browser_element,
+            fill_browser_element,
+            list_browser_tabs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

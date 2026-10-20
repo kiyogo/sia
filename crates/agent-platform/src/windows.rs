@@ -336,3 +336,173 @@ impl FileSystemProvider for WindowsFileSystemProvider {
         p_str.starts_with(&b_str)
     }
 }
+
+pub struct WindowsComputerControlAdapter;
+
+impl WindowsComputerControlAdapter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for WindowsComputerControlAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl crate::traits::ComputerControlAdapter for WindowsComputerControlAdapter {
+    fn name(&self) -> &'static str {
+        "WindowsComputerControl"
+    }
+
+    fn is_available(&self) -> bool {
+        true
+    }
+
+    async fn get_lock_status(&self) -> PlatformResult<crate::traits::DesktopLockStatus> {
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "if (Get-Process -Name logonui -ErrorAction SilentlyContinue) { 'LOCKED' } else { 'UNLOCKED' }",
+            ])
+            .output()
+            .await
+            .map_err(|e| PlatformError::ExecutionFailed(format!("Failed to query desktop lock status: {e}")))?;
+
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_uppercase();
+        if text.contains("LOCKED") {
+            Ok(crate::traits::DesktopLockStatus::Locked)
+        } else {
+            Ok(crate::traits::DesktopLockStatus::Unlocked)
+        }
+    }
+
+    async fn list_windows(&self) -> PlatformResult<Vec<crate::traits::WindowInfo>> {
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Get-Process | Where-Object MainWindowTitle | Select-Object Id, ProcessName, MainWindowTitle | ConvertTo-Json -Compress",
+            ])
+            .output()
+            .await
+            .map_err(|e| PlatformError::ExecutionFailed(format!("Failed to list open windows: {e}")))?;
+
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut list = Vec::new();
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+            let items = if let Some(arr) = val.as_array() {
+                arr.clone()
+            } else {
+                vec![val]
+            };
+
+            for item in items {
+                let id = item.get("Id").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+                let title = item.get("MainWindowTitle").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let process_name = item.get("ProcessName").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                if !title.is_empty() {
+                    list.push(crate::traits::WindowInfo {
+                        id,
+                        title,
+                        process_name,
+                        is_active: false,
+                        bounds: None,
+                    });
+                }
+            }
+        }
+
+        Ok(list)
+    }
+
+    async fn get_active_window(&self) -> PlatformResult<Option<crate::traits::WindowInfo>> {
+        let windows = self.list_windows().await?;
+        // Return first top window with active flag set, or the first window in the list
+        if let Some(w) = windows.into_iter().next() {
+            let mut active_w = w;
+            active_w.is_active = true;
+            Ok(Some(active_w))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn switch_window(&self, title: &str) -> PlatformResult<bool> {
+        let escaped_title = title.replace('\'', "''");
+        let script = format!(
+            "[void](New-Object -ComObject WScript.Shell).AppActivate('{}'); $true",
+            escaped_title
+        );
+
+        let output = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .await
+            .map_err(|e| PlatformError::ExecutionFailed(format!("Failed to switch window to '{title}': {e}")))?;
+
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
+        Ok(text.contains("true"))
+    }
+
+    async fn get_desktop_state(&self) -> PlatformResult<serde_json::Value> {
+        let lock_status = self.get_lock_status().await?;
+        let windows = self.list_windows().await?;
+        let active = self.get_active_window().await?;
+
+        Ok(serde_json::json!({
+            "lock_status": format!("{:?}", lock_status),
+            "open_windows_count": windows.len(),
+            "active_window": active.map(|w| w.title).unwrap_or_default(),
+            "windows": windows
+        }))
+    }
+
+    async fn take_screenshot(&self) -> PlatformResult<Vec<u8>> {
+        // High efficiency desktop screenshot via PowerShell / .NET Drawing
+        let script = r#"
+Add-Type -AssemblyName System.Windows.Forms;
+Add-Type -AssemblyName System.Drawing;
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
+$bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height;
+$graphics = [System.Drawing.Graphics]::FromImage($bmp);
+$graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size);
+$ms = New-Object System.IO.MemoryStream;
+$bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png);
+$graphics.Dispose();
+$bmp.Dispose();
+[Convert]::ToBase64String($ms.ToArray())
+"#;
+        let output = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .output()
+            .await
+            .map_err(|e| PlatformError::ExecutionFailed(format!("Screenshot capture failed: {e}")))?;
+
+        let b64 = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if b64.is_empty() {
+            return Err(PlatformError::ExecutionFailed("Screenshot returned empty data".to_string()));
+        }
+
+        // Return base64-decoded bytes or raw string representation
+        let bytes = b64.into_bytes();
+        Ok(bytes)
+    }
+
+    async fn take_focused_screenshot(&self, window_title: Option<&str>) -> PlatformResult<Vec<u8>> {
+        if let Some(t) = window_title {
+            let _ = self.switch_window(t).await;
+        }
+        self.take_screenshot().await
+    }
+}

@@ -11,10 +11,10 @@ pub use language::MultiLanguageAdapter;
 pub use traits::*;
 
 #[cfg(target_os = "windows")]
-pub use windows::{WindowsFileSystemProvider, WindowsOperatingSystemAdapter, WindowsShellExecutor};
+pub use windows::{WindowsComputerControlAdapter, WindowsFileSystemProvider, WindowsOperatingSystemAdapter, WindowsShellExecutor};
 
 #[cfg(not(target_os = "windows"))]
-pub use stub::{GenericFileSystemProvider as WindowsFileSystemProvider, GenericOperatingSystemAdapter as WindowsOperatingSystemAdapter, GenericShellExecutor as WindowsShellExecutor};
+pub use stub::{GenericComputerControlAdapter as WindowsComputerControlAdapter, GenericFileSystemProvider as WindowsFileSystemProvider, GenericOperatingSystemAdapter as WindowsOperatingSystemAdapter, GenericShellExecutor as WindowsShellExecutor};
 
 /// Factory function to return the default platform adapter for the current host OS
 pub fn get_platform_adapters() -> (

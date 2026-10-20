@@ -1,9 +1,6 @@
-use agent_core::{
-    ChatMessage, ContextBudgetConfig, FunctionCall, MockModelProvider, ModelResponse, ModelUsage,
-    TokenOptimizer, ToolCall,
-};
+use agent_core::{ChatMessage, ContextBudgetConfig, TokenOptimizer};
 use agent_platform::{
-    get_platform_adapters, OperatingSystemAdapter, ShellExecutor, ShellType,
+    get_platform_adapters, OperatingSystemAdapter, ShellType,
     WindowsFileSystemProvider, WindowsOperatingSystemAdapter, WindowsShellExecutor,
 };
 use agent_runtime::{RuntimeConfig, RuntimeHost};
@@ -12,7 +9,6 @@ use agent_storage::{Checkpoint, Database, Message, Task, TaskStatus};
 use agent_tools::create_default_registry;
 use chrono::Utc;
 use serde_json::json;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tempfile::tempdir;
 use uuid::Uuid;

@@ -118,13 +118,84 @@ pub struct ProjectInfo {
     pub git_branch: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DesktopLockStatus {
+    Unlocked,
+    Locked,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WindowBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WindowInfo {
+    pub id: String,
+    pub title: String,
+    pub process_name: String,
+    pub is_active: bool,
+    pub bounds: Option<WindowBounds>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiElementNode {
+    pub id: String,
+    pub role: String,
+    pub name: String,
+    pub value: Option<String>,
+    pub bounds: Option<WindowBounds>,
+    pub is_interactive: bool,
+    pub children: Vec<UiElementNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BrowserTabInfo {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DomSnapshotNode {
+    pub ref_id: String,
+    pub tag: String,
+    pub role: Option<String>,
+    pub text: Option<String>,
+    pub value: Option<String>,
+    pub is_interactive: bool,
+    pub attributes: std::collections::HashMap<String, String>,
+    pub children: Vec<DomSnapshotNode>,
+}
+
 #[async_trait]
 pub trait ComputerControlAdapter: Send + Sync {
     fn name(&self) -> &'static str;
     fn is_available(&self) -> bool;
-    async fn get_desktop_state(&self) -> PlatformResult<serde_json::Value>;
+    async fn get_lock_status(&self) -> PlatformResult<DesktopLockStatus>;
+    async fn list_windows(&self) -> PlatformResult<Vec<WindowInfo>>;
+    async fn get_active_window(&self) -> PlatformResult<Option<WindowInfo>>;
     async fn switch_window(&self, title: &str) -> PlatformResult<bool>;
+    async fn get_desktop_state(&self) -> PlatformResult<serde_json::Value>;
     async fn take_screenshot(&self) -> PlatformResult<Vec<u8>>;
+    async fn take_focused_screenshot(&self, window_title: Option<&str>) -> PlatformResult<Vec<u8>>;
+}
+
+#[async_trait]
+pub trait BrowserAutomationAdapter: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn is_available(&self) -> bool;
+    async fn navigate(&self, url: &str) -> PlatformResult<String>;
+    async fn get_snapshot(&self) -> PlatformResult<DomSnapshotNode>;
+    async fn click_element(&self, selector_or_ref: &str) -> PlatformResult<bool>;
+    async fn fill_element(&self, selector_or_ref: &str, value: &str) -> PlatformResult<bool>;
+    async fn list_tabs(&self) -> PlatformResult<Vec<BrowserTabInfo>>;
+    async fn close(&self) -> PlatformResult<()>;
 }
 
 #[async_trait]

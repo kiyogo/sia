@@ -1,5 +1,5 @@
 use agent_core::{
-    deduplicate_diagnostics, ChatMessage, CodingMode, CodingWorkflowEngine,
+    deduplicate_diagnostics, CodingMode, CodingWorkflowEngine,
     ContextBudgetConfig, FunctionCall, MockModelProvider, ModelResponse, ModelUsage,
     TokenOptimizer, ToolCall,
 };
@@ -10,7 +10,7 @@ use agent_platform::{
 use agent_runtime::{RuntimeConfig, RuntimeHost};
 use agent_security::{PermissionMode, SecurityEngine};
 use agent_storage::Database;
-use agent_tools::{compute_unified_diff, create_default_registry};
+use agent_tools::create_default_registry;
 use serde_json::json;
 use std::fs;
 use std::sync::atomic::AtomicBool;

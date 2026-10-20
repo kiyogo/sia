@@ -147,6 +147,116 @@ impl TokenOptimizer {
         let out_cost = (usage.completion_tokens as f64 / 1_000_000.0) * price_per_m_out;
         in_cost + out_cost
     }
+
+    /// Prune DOM snapshot tree: strip non-interactive, empty container nodes and prune past max_depth
+    pub fn prune_dom_tree(node: &agent_platform::DomSnapshotNode, max_depth: usize) -> Option<agent_platform::DomSnapshotNode> {
+        if max_depth == 0 {
+            return None;
+        }
+
+        let mut pruned_children = Vec::new();
+        for child in &node.children {
+            if let Some(pruned_child) = Self::prune_dom_tree(child, max_depth - 1) {
+                pruned_children.push(pruned_child);
+            }
+        }
+
+        let has_text = node.text.as_ref().map(|t| !t.trim().is_empty()).unwrap_or(false);
+        let has_value = node.value.as_ref().map(|v| !v.trim().is_empty()).unwrap_or(false);
+
+        if node.is_interactive || has_text || has_value || !pruned_children.is_empty() {
+            Some(agent_platform::DomSnapshotNode {
+                ref_id: node.ref_id.clone(),
+                tag: node.tag.clone(),
+                role: node.role.clone(),
+                text: node.text.clone(),
+                value: node.value.clone(),
+                is_interactive: node.is_interactive,
+                attributes: node.attributes.clone(),
+                children: pruned_children,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Convert structured DOM snapshot into compact, line-based textual representation
+    pub fn dom_to_compact_text(node: &agent_platform::DomSnapshotNode, indent: usize) -> String {
+        let mut out = String::new();
+        let indent_str = "  ".repeat(indent);
+
+        let role_str = node.role.as_deref().unwrap_or(&node.tag);
+        let mut line = format!("{}[{}] {}", indent_str, node.ref_id, role_str);
+
+        if let Some(ref text) = node.text {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                let snippet = if trimmed.len() > 60 {
+                    format!("{}...", &trimmed[..60])
+                } else {
+                    trimmed.to_string()
+                };
+                line.push_str(&format!(" \"{}\"", snippet));
+            }
+        }
+
+        if let Some(ref val) = node.value {
+            if !val.is_empty() {
+                line.push_str(&format!(" value=\"{}\"", val));
+            }
+        }
+
+        if node.is_interactive {
+            line.push_str(" [interactive]");
+        }
+
+        out.push_str(&line);
+        out.push('\n');
+
+        for child in &node.children {
+            out.push_str(&Self::dom_to_compact_text(child, indent + 1));
+        }
+
+        out
+    }
+
+    /// Calculate delta between previous DOM snapshot and current DOM snapshot
+    pub fn compute_dom_delta(
+        prev: &agent_platform::DomSnapshotNode,
+        curr: &agent_platform::DomSnapshotNode,
+    ) -> String {
+        let prev_text = Self::dom_to_compact_text(prev, 0);
+        let curr_text = Self::dom_to_compact_text(curr, 0);
+
+        if prev_text == curr_text {
+            return "[Observation Delta: No changes detected in DOM tree]".to_string();
+        }
+
+        let prev_lines: std::collections::HashSet<&str> = prev_text.lines().collect();
+        let curr_lines: Vec<&str> = curr_text.lines().collect();
+
+        let mut added = Vec::new();
+        for line in curr_lines {
+            if !prev_lines.contains(line) {
+                added.push(line);
+            }
+        }
+
+        if added.is_empty() {
+            "[Observation Delta: Structural node modifications detected]".to_string()
+        } else {
+            format!("[Observation Delta: {} changed/added nodes]:\n{}", added.len(), added.join("\n"))
+        }
+    }
+
+    /// Observation state hash for caching
+    pub fn hash_state(content: &str) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    }
 }
 
 #[cfg(test)]

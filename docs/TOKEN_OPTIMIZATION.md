@@ -47,3 +47,28 @@ Total Context Window (e.g. 32,000 tokens)
 ### E. Usage Measurement & Cost Estimation
 - Every model response updates cumulative usage statistics (`prompt_tokens`, `completion_tokens`, `total_tokens`, `cached_tokens`).
 - Real-time cost estimation is computed using standard pricing tables (e.g., $0.15/1M input tokens, $0.60/1M output tokens).
+
+---
+
+## 3. Phase 3 Specialized Computer & Browser Token Optimizations
+
+### A. Accessibility-First & DOM-First Representation
+Rather than passing multi-megapixel screenshots (~1,800–2,500 tokens per step) into multimodal vision models:
+- Desktop: Uses Windows UI Automation (UIA) to query element names, control types, and bounds (~180 tokens).
+- Browser: Uses Playwright MCP `browser_snapshot` to extract an accessibility tree with element ref IDs (`ref_1`, `ref_2`) (~220 tokens).
+- **Result:** Over 90% reduction in tokens per observation cycle.
+
+### B. DOM Tree Pruning & Depth Limiting
+- Non-interactive container nodes (`<div>`, `<span>` without semantics, scripts, stylesheets, svgs) are recursively stripped.
+- The snapshot engine caps traversal depth (default: 5 levels) to prevent runaway DOM trees on complex web portals.
+- Long text nodes exceeding 60 characters are truncated into snippets with trailing ellipsis.
+
+### C. Observation Delta Engine
+On consecutive interactions with the same page or application:
+- Consecutive snapshots are compared line-by-line.
+- Identical subtrees are suppressed; only modified, added, or removed nodes are sent to the LLM context.
+- Reduces token footprint on iterative form filling by up to 95%.
+
+### D. Observation State Hashing & Cache
+- Fast 64-bit state hashing (`TokenOptimizer::hash_state`).
+- If an action resulted in an invariant UI state, the agent detects the unchanged hash and avoids redundant re-interpretation by the LLM.

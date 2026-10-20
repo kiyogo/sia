@@ -40,6 +40,10 @@ function getMockResponse<T>(cmd: string): T {
         windows_mcp_connected: false,
         windows_mcp_prerequisites: true,
         windows_mcp_hint: 'Python 3.14+ and uv ready.',
+        browser_connected: false,
+        desktop_controller: 'None',
+        desktop_remaining_secs: 0,
+        is_emergency_stopped: false,
         tasks_running: 1,
         tasks_completed: 4,
         tasks_failed: 0,
@@ -48,6 +52,27 @@ function getMockResponse<T>(cmd: string): T {
         workspace_path: 'C:\\workspace\\test_project',
         permission_mode: 'WorkspaceAuto',
       } as unknown as T;
+
+    case 'get_ownership_status':
+      return {
+        current_controller: 'None',
+        remaining_secs: 0,
+        is_emergency_stopped: false,
+      } as unknown as T;
+
+    case 'list_desktop_windows':
+      return [
+        { id: '101', title: 'Notepad - Untitled', process_name: 'notepad', is_active: true },
+        { id: '102', title: 'Command Prompt', process_name: 'cmd', is_active: false },
+      ] as unknown as T;
+
+    case 'list_browser_tabs':
+      return [
+        { id: 't1', title: 'Home - Universal AI', url: 'http://localhost:3000', is_active: true },
+      ] as unknown as T;
+
+    case 'get_desktop_lock_status':
+      return 'Unlocked' as unknown as T;
 
     case 'list_conversations':
       return [

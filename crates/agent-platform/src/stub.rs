@@ -98,3 +98,44 @@ impl FileSystemProvider for GenericFileSystemProvider {
         components.iter().collect()
     }
 }
+
+pub struct GenericComputerControlAdapter;
+
+#[async_trait]
+impl crate::traits::ComputerControlAdapter for GenericComputerControlAdapter {
+    fn name(&self) -> &'static str {
+        "GenericComputerControl"
+    }
+
+    fn is_available(&self) -> bool {
+        false
+    }
+
+    async fn get_lock_status(&self) -> PlatformResult<crate::traits::DesktopLockStatus> {
+        Ok(crate::traits::DesktopLockStatus::Unknown)
+    }
+
+    async fn list_windows(&self) -> PlatformResult<Vec<crate::traits::WindowInfo>> {
+        Ok(Vec::new())
+    }
+
+    async fn get_active_window(&self) -> PlatformResult<Option<crate::traits::WindowInfo>> {
+        Ok(None)
+    }
+
+    async fn switch_window(&self, _title: &str) -> PlatformResult<bool> {
+        Ok(false)
+    }
+
+    async fn get_desktop_state(&self) -> PlatformResult<serde_json::Value> {
+        Ok(serde_json::json!({ "status": "not_supported" }))
+    }
+
+    async fn take_screenshot(&self) -> PlatformResult<Vec<u8>> {
+        Err(PlatformError::NotSupported("Screenshots not supported on this platform".to_string()))
+    }
+
+    async fn take_focused_screenshot(&self, _window_title: Option<&str>) -> PlatformResult<Vec<u8>> {
+        Err(PlatformError::NotSupported("Screenshots not supported on this platform".to_string()))
+    }
+}

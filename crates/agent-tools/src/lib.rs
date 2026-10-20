@@ -1,3 +1,4 @@
+pub mod browser_mcp;
 pub mod build_test;
 pub mod code_edit;
 pub mod code_intelligence;
@@ -9,6 +10,7 @@ pub mod terminal;
 pub mod types;
 pub mod windows_mcp;
 
+pub use browser_mcp::{BrowserMcpManager, DynamicBrowserMcpTool};
 pub use build_test::{BuildRunnerTool, TestRunnerTool};
 pub use code_edit::{compute_unified_diff, CodeEditTool, CodePatchTool, DiffPreviewTool};
 pub use code_intelligence::{CodeSearchTool, FileOutlineTool, ProjectDetectTool, RepoMapTool};
