@@ -1,11 +1,19 @@
+pub mod build_test;
+pub mod code_edit;
+pub mod code_intelligence;
 pub mod filesystem;
+pub mod git;
 pub mod mcp_client;
 pub mod registry;
 pub mod terminal;
 pub mod types;
 pub mod windows_mcp;
 
+pub use build_test::{BuildRunnerTool, TestRunnerTool};
+pub use code_edit::{compute_unified_diff, CodeEditTool, CodePatchTool, DiffPreviewTool};
+pub use code_intelligence::{CodeSearchTool, FileOutlineTool, ProjectDetectTool, RepoMapTool};
 pub use filesystem::{FileListTool, FilePatchTool, FileReadTool, FileSearchTool, FileWriteTool};
+pub use git::{GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool};
 pub use mcp_client::{McpClient, McpToolInfo};
 pub use registry::{create_default_registry, SharedToolRegistry, ToolRegistry};
 pub use terminal::TerminalTool;
@@ -112,5 +120,87 @@ mod tests {
             .await
             .expect("file patch");
         assert!(patch_res.stdout.contains("ReplacedString"));
+    }
+
+    #[tokio::test]
+    async fn test_coding_tools_edit_and_search() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().to_path_buf();
+        let fs = Box::new(WindowsFileSystemProvider::new());
+        let sec = Arc::new(SecurityEngine::new(root.clone(), PermissionMode::FullAuto, fs));
+        let executor = Box::new(WindowsShellExecutor::new());
+        let registry = create_default_registry(executor, sec);
+
+        // 1. Write source file
+        std::fs::write(root.join("main.rs"), "fn calculate(x: i32) -> i32 {\n    x + 10\n}\n").expect("write");
+
+        // 2. OpenCode style code_edit
+        let edit_res = registry
+            .execute(
+                "code_edit",
+                "call_e",
+                json!({
+                    "path": "main.rs",
+                    "old_string": "x + 10",
+                    "new_string": "x * 20"
+                }),
+            )
+            .await
+            .expect("code edit");
+        assert!(edit_res.stdout.contains("diff"));
+
+        let content = std::fs::read_to_string(root.join("main.rs")).expect("read");
+        assert!(content.contains("x * 20"));
+
+        // 3. Code search
+        let search_res = registry
+            .execute(
+                "code_search",
+                "call_cs",
+                json!({
+                    "pattern": "calculate"
+                }),
+            )
+            .await
+            .expect("code search");
+        assert!(search_res.stdout.contains("calculate"));
+
+        // 4. Repo map
+        let map_res = registry
+            .execute("repo_map", "call_rm", json!({ "max_chars": 2000 }))
+            .await
+            .expect("repo map");
+        assert!(map_res.stdout.contains("main.rs"));
+    }
+
+    #[tokio::test]
+    async fn test_code_patch_atomic_rollback() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().to_path_buf();
+        let fs = Box::new(WindowsFileSystemProvider::new());
+        let sec = Arc::new(SecurityEngine::new(root.clone(), PermissionMode::FullAuto, fs));
+        let executor = Box::new(WindowsShellExecutor::new());
+        let registry = create_default_registry(executor, sec);
+
+        std::fs::write(root.join("a.txt"), "Original A\n").expect("write a");
+
+        // Attempt batch patch where second file targets an illegal directory outside workspace
+        let res = registry
+            .execute(
+                "code_patch",
+                "call_p_fail",
+                json!({
+                    "edits": [
+                        { "path": "a.txt", "content": "Modified A\n" },
+                        { "path": "../../outside_sandbox.txt", "content": "Hacked\n" }
+                    ]
+                }),
+            )
+            .await;
+
+        assert!(res.is_err());
+        // Verify a.txt was NOT modified due to validation or was rolled back
+        let content_a = std::fs::read_to_string(root.join("a.txt")).expect("read a");
+        assert_eq!(content_a, "Original A\n");
     }
 }

@@ -1,4 +1,40 @@
-export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'workspace' | 'terminal' | 'settings';
+export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'workspace' | 'coding' | 'terminal' | 'settings';
+
+export type CodingMode = 'Ask' | 'Plan' | 'Build';
+
+export interface DiagnosticMessage {
+  file: string;
+  line: number;
+  column: number;
+  severity: 'Error' | 'Warning' | 'Info';
+  message: string;
+  code?: string;
+  context_snippet?: string;
+}
+
+export interface BuildResult {
+  command: string;
+  success: boolean;
+  exit_code?: number;
+  duration_ms: number;
+  total_errors: number;
+  total_warnings: number;
+  root_cause?: DiagnosticMessage;
+  diagnostics: DiagnosticMessage[];
+  stdout: string;
+  stderr: string;
+}
+
+export interface ProjectInfo {
+  root_path: string;
+  primary_language: string | null;
+  languages: string[];
+  build_systems: string[];
+  test_runners: string[];
+  entry_points: string[];
+  is_git: boolean;
+  git_branch: string | null;
+}
 
 export type TaskStatus = 'Pending' | 'Running' | 'WaitingApproval' | 'Paused' | 'Completed' | 'Failed' | 'Cancelled';
 

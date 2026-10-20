@@ -1,4 +1,5 @@
 pub mod error;
+pub mod language;
 pub mod stub;
 pub mod traits;
 
@@ -6,6 +7,7 @@ pub mod traits;
 pub mod windows;
 
 pub use error::{PlatformError, PlatformResult};
+pub use language::MultiLanguageAdapter;
 pub use traits::*;
 
 #[cfg(target_os = "windows")]

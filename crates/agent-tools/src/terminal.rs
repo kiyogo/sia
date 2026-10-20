@@ -7,12 +7,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct TerminalTool {
-    executor: Box<dyn ShellExecutor>,
+    executor: Arc<dyn ShellExecutor>,
     security: SharedSecurityEngine,
 }
 
 impl TerminalTool {
     pub fn new(executor: Box<dyn ShellExecutor>, security: SharedSecurityEngine) -> Self {
+        Self {
+            executor: Arc::from(executor),
+            security,
+        }
+    }
+
+    pub fn new_arc(executor: Arc<dyn ShellExecutor>, security: SharedSecurityEngine) -> Self {
         Self { executor, security }
     }
 }

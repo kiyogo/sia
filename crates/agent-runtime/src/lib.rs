@@ -1,8 +1,11 @@
 use agent_core::{
-    AgentEvent, AgentLoop, ContextBudgetConfig, ModelProvider, OpenAiCompatibleProvider,
-    TokenOptimizer,
+    AgentEvent, AgentLoop, CodingMode, CodingWorkflowEngine, ContextBudgetConfig, ModelProvider,
+    OpenAiCompatibleProvider, TokenOptimizer,
 };
-use agent_platform::{get_platform_adapters, OperatingSystemAdapter};
+use agent_platform::{
+    get_platform_adapters, LanguageToolingAdapter, MultiLanguageAdapter, OperatingSystemAdapter,
+    ProjectInfo,
+};
 use agent_security::{PermissionMode, SecurityEngine, SharedSecurityEngine};
 use agent_storage::{Checkpoint, Database, Task, TaskStatus};
 use agent_tools::{create_default_registry, SharedToolRegistry, WindowsMcpManager};
@@ -357,6 +360,167 @@ impl RuntimeHost {
         });
 
         Ok(task_id)
+    }
+
+    pub async fn start_coding_task(
+        &self,
+        title: &str,
+        goal: &str,
+        user_prompt: &str,
+        mode: CodingMode,
+        conversation_id: Option<Uuid>,
+    ) -> RuntimeResult<Uuid> {
+        let task_id = Uuid::new_v4();
+        let mut task = Task {
+            id: task_id,
+            conversation_id,
+            title: format!("[{mode}] {title}"),
+            status: TaskStatus::Pending,
+            goal: goal.to_string(),
+            current_step: format!("Initializing coding workflow in {mode} mode"),
+            result: None,
+            error: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        self.database.create_task(&task).await?;
+
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        {
+            let mut active = self.active_tasks.write().await;
+            active.insert(
+                task_id,
+                TaskControl {
+                    cancel_flag: cancel_flag.clone(),
+                },
+            );
+        }
+
+        let provider = {
+            let prov = self.provider.read().await;
+            prov.clone().ok_or(RuntimeError::ProviderNotConfigured)?
+        };
+
+        let cfg = self.config.read().await.clone();
+        let (engine, mut rx) = CodingWorkflowEngine::new(
+            provider,
+            self.registry.clone(),
+            self.security.clone(),
+            self.database.clone(),
+            self.optimizer.clone(),
+            cfg.max_loops,
+        );
+
+        let event_bus = self.event_bus.clone();
+        let active_tasks = self.active_tasks.clone();
+        let user_prompt_owned = user_prompt.to_string();
+
+        tokio::spawn(async move {
+            while let Ok(evt) = rx.recv().await {
+                let _ = event_bus.send((task_id, evt));
+            }
+        });
+
+        tokio::spawn(async move {
+            let res = engine
+                .run(&mut task, mode, &user_prompt_owned, cancel_flag)
+                .await;
+
+            if let Err(e) = res {
+                error!("Coding task {} ended with error: {}", task_id, e);
+            }
+
+            let mut active = active_tasks.write().await;
+            active.remove(&task_id);
+        });
+
+        Ok(task_id)
+    }
+
+    pub async fn detect_project(&self, subpath: Option<&str>) -> Option<ProjectInfo> {
+        let workspace = self.security.get_workspace_root().await;
+        let target_dir = match subpath {
+            Some(s) if !s.is_empty() => workspace.join(s),
+            _ => workspace,
+        };
+        let adapter = MultiLanguageAdapter::new();
+        adapter.detect_project(&target_dir)
+    }
+
+    pub async fn get_repo_map(&self, max_chars: Option<u64>, subdir: Option<&str>) -> RuntimeResult<String> {
+        let res = self
+            .registry
+            .execute(
+                "repo_map",
+                "direct_call",
+                serde_json::json!({
+                    "max_chars": max_chars.unwrap_or(4000),
+                    "subdir": subdir.unwrap_or("")
+                }),
+            )
+            .await?;
+        Ok(res.stdout)
+    }
+
+    pub async fn preview_diff(&self, path: &str, new_content: &str) -> RuntimeResult<String> {
+        let res = self
+            .registry
+            .execute(
+                "diff_preview",
+                "direct_call",
+                serde_json::json!({
+                    "path": path,
+                    "new_content": new_content
+                }),
+            )
+            .await?;
+        Ok(res.stdout)
+    }
+
+    pub async fn run_build(&self, command: Option<&str>, path: Option<&str>) -> RuntimeResult<serde_json::Value> {
+        let mut params = serde_json::Map::new();
+        if let Some(cmd) = command {
+            params.insert("command".to_string(), serde_json::Value::String(cmd.to_string()));
+        }
+        if let Some(p) = path {
+            params.insert("path".to_string(), serde_json::Value::String(p.to_string()));
+        }
+
+        let res = self
+            .registry
+            .execute("run_build", "direct_call", serde_json::Value::Object(params))
+            .await?;
+
+        let val: serde_json::Value = serde_json::from_str(&res.stdout).unwrap_or(serde_json::json!({
+            "raw_output": res.stdout,
+            "stderr": res.stderr
+        }));
+        Ok(val)
+    }
+
+    pub async fn run_test(&self, command: Option<&str>, filter: Option<&str>, path: Option<&str>) -> RuntimeResult<serde_json::Value> {
+        let mut params = serde_json::Map::new();
+        if let Some(cmd) = command {
+            params.insert("command".to_string(), serde_json::Value::String(cmd.to_string()));
+        }
+        if let Some(f) = filter {
+            params.insert("filter".to_string(), serde_json::Value::String(f.to_string()));
+        }
+        if let Some(p) = path {
+            params.insert("path".to_string(), serde_json::Value::String(p.to_string()));
+        }
+
+        let res = self
+            .registry
+            .execute("run_test", "direct_call", serde_json::Value::Object(params))
+            .await?;
+
+        let val: serde_json::Value = serde_json::from_str(&res.stdout).unwrap_or(serde_json::json!({
+            "raw_output": res.stdout,
+            "stderr": res.stderr
+        }));
+        Ok(val)
     }
 
     pub async fn cancel_task(&self, task_id: Uuid) -> RuntimeResult<()> {

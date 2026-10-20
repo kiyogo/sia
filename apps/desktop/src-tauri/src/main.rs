@@ -297,6 +297,57 @@ async fn test_provider_connection(state: State<'_, AppState>) -> Result<bool, St
     Ok(stats.provider_connected)
 }
 
+#[tauri::command]
+async fn detect_project(subpath: Option<String>, state: State<'_, AppState>) -> Result<Option<agent_platform::ProjectInfo>, String> {
+    Ok(state.host.detect_project(subpath.as_deref()).await)
+}
+
+#[tauri::command]
+async fn get_repo_map(max_chars: Option<u64>, subdir: Option<String>, state: State<'_, AppState>) -> Result<String, String> {
+    state.host.get_repo_map(max_chars, subdir.as_deref()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn preview_diff(path: String, new_content: String, state: State<'_, AppState>) -> Result<String, String> {
+    state.host.preview_diff(&path, &new_content).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn run_build(command: Option<String>, path: Option<String>, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    state.host.run_build(command.as_deref(), path.as_deref()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn run_test(command: Option<String>, filter: Option<String>, path: Option<String>, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    state.host.run_test(command.as_deref(), filter.as_deref(), path.as_deref()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn start_coding_task(
+    title: String,
+    goal: String,
+    user_prompt: String,
+    mode: String,
+    conversation_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let conv_id = match conversation_id {
+        Some(s) if !s.is_empty() => Some(Uuid::parse_str(&s).map_err(|e| e.to_string())?),
+        _ => None,
+    };
+    let coding_mode = match mode.to_lowercase().as_str() {
+        "ask" => agent_core::CodingMode::Ask,
+        "plan" => agent_core::CodingMode::Plan,
+        _ => agent_core::CodingMode::Build,
+    };
+    let task_id = state
+        .host
+        .start_coding_task(&title, &goal, &user_prompt, coding_mode, conv_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(task_id.to_string())
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -370,7 +421,13 @@ async fn main() {
             reset_emergency_stop,
             get_runtime_config,
             save_runtime_config,
-            test_provider_connection
+            test_provider_connection,
+            detect_project,
+            get_repo_map,
+            preview_diff,
+            run_build,
+            run_test,
+            start_coding_task
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

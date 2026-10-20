@@ -5,6 +5,7 @@ import {
   MessageSquare,
   ListTodo,
   FolderTree,
+  Code2,
   Terminal,
   Settings,
   Activity,
@@ -32,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { id: 'chat', label: 'AI Chat', icon: <MessageSquare className="w-5 h-5" /> },
     { id: 'tasks', label: 'Tasks', icon: <ListTodo className="w-5 h-5" /> },
+    { id: 'coding', label: 'Coding Agent', icon: <Code2 className="w-5 h-5" /> },
     { id: 'workspace', label: 'Workspace', icon: <FolderTree className="w-5 h-5" /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal className="w-5 h-5" /> },
     {

@@ -23,6 +23,10 @@ pub enum AgentEvent {
     FinalAnswer { content: String },
     Error { message: String },
     TaskStatusChanged { status: TaskStatus },
+    CodingPlanCreated { plan: String },
+    CodeModified { path: String, diff: String },
+    BuildStatus { success: bool, errors: usize, warnings: usize },
+    SelfCorrectionAttempt { attempt: u32, target_file: String, error_summary: String },
 }
 
 pub struct AgentLoop {

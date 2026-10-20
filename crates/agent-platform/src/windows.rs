@@ -304,14 +304,26 @@ impl FileSystemProvider for WindowsFileSystemProvider {
     }
 
     fn normalize_path(&self, path: &Path) -> PathBuf {
+        use std::path::Component;
         let s = path.to_string_lossy();
-        // Remove Windows \\?\ UNC prefix if present
         let clean = if let Some(stripped) = s.strip_prefix(r"\\?\") {
             stripped
         } else {
             &s
         };
-        PathBuf::from(clean)
+        let mut components = Vec::new();
+        for component in Path::new(clean).components() {
+            match component {
+                Component::ParentDir => {
+                    if !components.is_empty() {
+                        components.pop();
+                    }
+                }
+                Component::CurDir => {}
+                c => components.push(c),
+            }
+        }
+        components.iter().collect()
     }
 
     fn is_within_boundary(&self, boundary: &Path, path: &Path) -> bool {

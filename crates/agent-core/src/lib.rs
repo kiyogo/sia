@@ -1,9 +1,13 @@
 pub mod agent_loop;
+pub mod coding_loop;
+pub mod diagnostics;
 pub mod error;
 pub mod model;
 pub mod token_optimizer;
 
 pub use agent_loop::{AgentEvent, AgentLoop};
+pub use coding_loop::{CodingMode, CodingWorkflowEngine};
+pub use diagnostics::{deduplicate_diagnostics, DeduplicatedDiagnostics};
 pub use error::{CoreError, CoreResult};
 pub use model::{
     ChatMessage, FunctionCall, MockModelProvider, ModelProvider, ModelRequest, ModelResponse,

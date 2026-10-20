@@ -76,10 +76,25 @@ impl FileSystemProvider for GenericFileSystemProvider {
     }
 
     fn is_within_boundary(&self, boundary: &Path, path: &Path) -> bool {
-        path.starts_with(boundary)
+        let b = self.normalize_path(boundary);
+        let p = self.normalize_path(path);
+        p.starts_with(b)
     }
 
     fn normalize_path(&self, path: &Path) -> PathBuf {
-        path.to_path_buf()
+        use std::path::Component;
+        let mut components = Vec::new();
+        for component in path.components() {
+            match component {
+                Component::ParentDir => {
+                    if !components.is_empty() {
+                        components.pop();
+                    }
+                }
+                Component::CurDir => {}
+                c => components.push(c),
+            }
+        }
+        components.iter().collect()
     }
 }
