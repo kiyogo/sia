@@ -9,7 +9,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
-  Cpu,
+  Code2,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -40,78 +40,91 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
     }
   }, [activity.arguments]);
 
-  const { icon, title, subtitle } = React.useMemo(() => {
+  // Antigravity & OpenCode style compact badge formatting
+  const { actionVerb, targetText, icon } = React.useMemo(() => {
     const name = activity.toolName.toLowerCase();
 
     if (name.includes('terminal') || name.includes('bash') || name.includes('cmd') || name.includes('powershell')) {
       const cmd = parsedArgs?.command || (typeof parsedArgs === 'string' ? parsedArgs : '');
       return {
-        icon: <Terminal className="w-3.5 h-3.5 text-amber-500" />,
-        title: t('Thực thi lệnh Terminal', 'Terminal Command'),
-        subtitle: cmd ? String(cmd).slice(0, 50) : '',
+        actionVerb: 'Ran',
+        targetText: cmd ? `$ ${String(cmd).slice(0, 60)}` : 'terminal command',
+        icon: <Terminal className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />,
       };
     }
 
-    if (name.includes('file') || name.includes('read') || name.includes('write')) {
+    if (name.includes('read') || name.includes('cat') || name.includes('open')) {
       const path = parsedArgs?.path || parsedArgs?.file_path || '';
-      const isWrite = name.includes('write');
+      const lines = parsedArgs?.start_line && parsedArgs?.end_line 
+        ? `#L${parsedArgs.start_line}-${parsedArgs.end_line}` 
+        : '';
       return {
-        icon: <FileCode className="w-3.5 h-3.5 text-blue-500" />,
-        title: isWrite ? t('Ghi tệp mã nguồn', 'Write File') : t('Đọc tệp mã nguồn', 'Read File'),
-        subtitle: path ? String(path) : '',
+        actionVerb: 'Analyzed',
+        targetText: `${path || 'file'} ${lines}`.trim(),
+        icon: <Code2 className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name.includes('write') || name.includes('edit') || name.includes('patch')) {
+      const path = parsedArgs?.path || parsedArgs?.file_path || '';
+      return {
+        actionVerb: 'Edited',
+        targetText: path || 'file',
+        icon: <FileCode className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />,
       };
     }
 
     if (name.includes('browser') || name.includes('navigate') || name.includes('click')) {
       const url = parsedArgs?.url || '';
       return {
-        icon: <Globe className="w-3.5 h-3.5 text-emerald-500" />,
-        title: t('Thao tác trình duyệt web', 'Browser Action'),
-        subtitle: url ? String(url) : '',
+        actionVerb: 'Browsed',
+        targetText: url ? String(url).slice(0, 50) : 'web page',
+        icon: <Globe className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />,
       };
     }
 
-    if (name.includes('desktop') || name.includes('window') || name.includes('screenshot')) {
+    if (name.includes('desktop') || name.includes('window')) {
       return {
-        icon: <Monitor className="w-3.5 h-3.5 text-purple-500" />,
-        title: t('Điều khiển máy tính desktop', 'Desktop Control'),
-        subtitle: activity.toolName,
+        actionVerb: 'Interacted with',
+        targetText: activity.toolName,
+        icon: <Monitor className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
       };
     }
 
     return {
-      icon: <Cpu className="w-3.5 h-3.5 text-blue-500" />,
-      title: activity.toolName,
-      subtitle: '',
+      actionVerb: 'Executed',
+      targetText: activity.toolName,
+      icon: <Code2 className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />,
     };
-  }, [activity.toolName, parsedArgs, t]);
+  }, [activity.toolName, parsedArgs]);
 
   return (
-    <div className="my-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#151518] overflow-hidden text-xs transition-all shadow-sm">
-      {/* Activity Summary Bar */}
+    <div className="my-1.5 rounded-lg border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#121215] overflow-hidden text-xs transition-all shadow-sm">
+      {/* Sleek Minimal Activity Pill */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+        className="w-full flex items-center justify-between px-2.5 py-1.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors"
       >
         <div className="flex items-center gap-2 overflow-hidden">
           {activity.status === 'running' && (
-            <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin flex-shrink-0" />
+            <Loader2 className="w-3 h-3 text-blue-500 animate-spin flex-shrink-0" />
           )}
           {activity.status === 'completed' && (
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+            <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
           )}
           {activity.status === 'failed' && (
-            <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+            <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
           )}
 
-          <div className="flex items-center gap-1.5 overflow-hidden">
+          <div className="flex items-center gap-1.5 overflow-hidden text-[11px] font-mono">
             {icon}
-            <span className="font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">{title}</span>
-            {subtitle && (
-              <span className="text-zinc-500 dark:text-zinc-400 font-mono truncate max-w-[280px] sm:max-w-[380px]">
-                ({subtitle})
-              </span>
-            )}
+            <span className="text-zinc-500 dark:text-zinc-400 font-sans font-medium">{actionVerb}</span>
+            <span className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-blue-600 dark:text-blue-400 font-semibold text-[10px] select-none">
+              &lt;/&gt;
+            </span>
+            <span className="text-zinc-800 dark:text-zinc-200 font-medium truncate max-w-[280px] sm:max-w-[420px]">
+              {targetText}
+            </span>
           </div>
         </div>
 
@@ -120,21 +133,20 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
             <span className="text-[10px] font-mono">{activity.durationMs}ms</span>
           )}
           {isExpanded ? (
-            <ChevronDown className="w-3.5 h-3.5" />
+            <ChevronDown className="w-3 h-3" />
           ) : (
-            <ChevronRight className="w-3.5 h-3.5" />
+            <ChevronRight className="w-3 h-3" />
           )}
         </div>
       </button>
 
       {/* Expanded Details */}
       {isExpanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 space-y-2">
-          {/* Arguments */}
+        <div className="px-3 pb-2.5 pt-1.5 border-t border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30 space-y-2">
           {activity.arguments && (
             <div>
               <div className="text-[10px] uppercase font-semibold text-zinc-400 dark:text-zinc-500 mb-1">
-                {t('Tham số đầu vào', 'Parameters')}
+                {t('Tham số', 'Parameters')}
               </div>
               <pre className="p-2 rounded bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-[11px] text-zinc-700 dark:text-zinc-300 overflow-x-auto leading-relaxed whitespace-pre-wrap">
                 {typeof parsedArgs === 'object'
@@ -144,11 +156,10 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
             </div>
           )}
 
-          {/* Output / Result */}
           {activity.output && (
             <div>
               <div className="text-[10px] uppercase font-semibold text-zinc-400 dark:text-zinc-500 mb-1 flex items-center justify-between">
-                <span>{t('Kết quả đầu ra', 'Execution Output')}</span>
+                <span>{t('Kết quả', 'Result')}</span>
                 {activity.exitCode !== undefined && (
                   <span className="font-mono text-[10px]">
                     exit: {activity.exitCode ?? 0}

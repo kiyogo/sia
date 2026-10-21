@@ -196,11 +196,32 @@ impl ModelProvider for OpenAiCompatibleProvider {
             }
         }
 
-        let status = res.status();
-        let text = res
+        let mut status = res.status();
+        let mut text = res
             .text()
             .await
             .map_err(|e| CoreError::Model(format!("Failed to read response body: {e}")))?;
+
+        // If provider rejected tools (common with custom Gemini / local proxies that don't support function calling schemas),
+        // cleanly retry without tools so the completion succeeds!
+        if (!status.is_success() && (status.as_u16() == 400 || status.as_u16() == 404 || status.as_u16() == 422))
+            && body.get("tools").is_some()
+        {
+            let mut fallback_body = body.clone();
+            if let Some(obj) = fallback_body.as_object_mut() {
+                obj.remove("tools");
+                obj.remove("tool_choice");
+            }
+            if let Ok(retry_res) = self.client.post(&url).headers(headers.clone()).json(&fallback_body).send().await {
+                let retry_status = retry_res.status();
+                if let Ok(retry_text) = retry_res.text().await {
+                    if retry_status.is_success() {
+                        status = retry_status;
+                        text = retry_text;
+                    }
+                }
+            }
+        }
 
         if !status.is_success() {
             return Err(CoreError::Model(format!(

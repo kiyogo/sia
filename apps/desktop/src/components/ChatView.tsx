@@ -10,7 +10,6 @@ import {
   Brain,
   AlertCircle,
   Settings2,
-  Clock,
 } from 'lucide-react';
 import { Conversation, Message, ApprovalRequest, AgentEvent } from '../types';
 import { invokeCommand, listenToEvent } from '../lib/tauriBridge';
@@ -125,6 +124,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
         setLiveThinking(null);
         setIsGenerating(false);
         setErrorMessage(null);
+        const asstMsg: Message = {
+          id: String(Date.now()),
+          conversation_id: activeConversation?.id || '',
+          role: 'assistant',
+          content: event.FinalAnswer.content,
+          tool_calls: null,
+          tool_call_id: null,
+          token_count: Math.ceil(event.FinalAnswer.content.length / 4),
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => {
+          if (prev.some((m) => m.content === asstMsg.content && m.role === 'assistant')) {
+            return prev;
+          }
+          return [...prev, asstMsg];
+        });
         if (activeConversation) {
           loadMessages(activeConversation.id);
         }
@@ -132,6 +147,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
         setLiveThinking(null);
         setIsGenerating(false);
         setErrorMessage(event.Error.message);
+        const errMsg: Message = {
+          id: String(Date.now()),
+          conversation_id: activeConversation?.id || '',
+          role: 'assistant',
+          content: `⚠️ **Lỗi phản hồi từ AI**: ${event.Error.message}\n\n*Vui lòng mở Cài đặt (Settings) để kiểm tra lại Endpoint và API Key.*`,
+          tool_calls: null,
+          tool_call_id: null,
+          token_count: 20,
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errMsg]);
       } else if ('TaskStatusChanged' in event) {
         if (event.TaskStatusChanged.status === 'Cancelled' || event.TaskStatusChanged.status === 'Failed') {
           setIsGenerating(false);
@@ -342,31 +368,37 @@ export const ChatView: React.FC<ChatViewProps> = ({
               </div>
             )}
 
-            {/* Prominent Thinking & Reasoning Card when AI is generating */}
+            {/* Prominent Thinking & Reasoning Card when AI is generating (OpenCode / Antigravity Style) */}
             {isGenerating && (
               <div className="w-full max-w-3xl mx-auto px-4 py-2">
-                <div className="p-3.5 rounded-2xl border border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20 text-xs shadow-sm space-y-2">
+                <div className="p-3 rounded-xl border border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20 text-xs shadow-sm space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center animate-pulse">
                         <Brain className="w-3.5 h-3.5" />
                       </div>
-                      <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                        {t('AI đang suy nghĩ...', 'AI is thinking...')}
+                      <span className="font-semibold text-zinc-900 dark:text-zinc-100 font-mono text-[12px]">
+                        Thinking for {thinkingElapsed}s
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
-                      <Clock className="w-3 h-3" />
-                      <span>{thinkingElapsed}s</span>
+                    <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                      <span className="animate-pulse text-blue-500 font-medium">streaming</span>
                     </div>
                   </div>
 
                   {/* Live Thinking Preview Text */}
-                  <div className="p-2 rounded-xl bg-white/80 dark:bg-[#121215]/80 border border-zinc-200/60 dark:border-zinc-800/60 text-[11px] font-mono text-zinc-700 dark:text-zinc-300 leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap">
-                    <div className="flex items-start gap-1.5">
+                  <div className="p-2.5 rounded-lg bg-white/90 dark:bg-[#121215]/90 border border-zinc-200/60 dark:border-zinc-800/60 text-[11px] font-mono text-zinc-700 dark:text-zinc-300 leading-relaxed max-h-40 overflow-y-auto whitespace-pre-wrap">
+                    <div className="flex items-start gap-2">
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500 flex-shrink-0 mt-0.5" />
-                      <span>{liveThinking || t('Đang kết nối tới mô hình AI...', 'Connecting to AI model...')}</span>
+                      <div className="space-y-1">
+                        <p>{liveThinking || t('Đang kết nối tới mô hình AI và nạp công cụ workspace...', 'Connecting to AI model & loading workspace tools...')}</p>
+                        {thinkingElapsed >= 25 && (
+                          <p className="text-[10px] text-zinc-400 italic">
+                            {t('Đang suy nghĩ chuyên sâu hoặc proxy local đang chuyển tiếp request...', 'Deep thinking in progress or local proxy is forwarding upstream request...')}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -2,7 +2,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::model::{ChatMessage, ModelProvider, ModelRequest, ModelUsage};
 use crate::token_optimizer::TokenOptimizer;
 use agent_security::SharedSecurityEngine;
-use agent_storage::{Checkpoint, Database, Task, TaskStatus, ToolAuditLog};
+use agent_storage::{Checkpoint, Database, Message as StorageMessage, Task, TaskStatus, ToolAuditLog};
 use agent_tools::{SharedToolRegistry, ToolExecutionResult};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -149,12 +149,28 @@ impl AgentLoop {
                 Ok(r) => r,
                 Err(e) => {
                     error!("Model generation failed: {e}");
+                    let error_msg = format!("Lỗi kết nối AI: {e}");
                     let _ = self.event_sender.send(AgentEvent::Error {
-                        message: e.to_string(),
+                        message: error_msg.clone(),
                     });
                     self.database
                         .update_task_status(task.id, TaskStatus::Failed, "Model generation error", None, Some(&e.to_string()))
                         .await?;
+
+                    if let Some(conv_id) = task.conversation_id {
+                        let asst_msg = StorageMessage {
+                            id: Uuid::new_v4(),
+                            conversation_id: conv_id,
+                            role: "assistant".to_string(),
+                            content: format!("⚠️ **Lỗi kết nối AI**: {}\n\n*Gợi ý: Kiểm tra xem Endpoint và Model Name trong Cài đặt (Settings) đã chính xác chưa.*", e),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            token_count: 20,
+                            created_at: Utc::now(),
+                        };
+                        let _ = self.database.add_message(&asst_msg).await;
+                    }
+
                     return Err(e);
                 }
             };
@@ -203,6 +219,21 @@ impl AgentLoop {
                         None,
                     )
                     .await?;
+
+                // Persist assistant message in conversation so it appears in chat history!
+                if let Some(conv_id) = task.conversation_id {
+                    let asst_msg = StorageMessage {
+                        id: Uuid::new_v4(),
+                        conversation_id: conv_id,
+                        role: "assistant".to_string(),
+                        content: final_text.clone(),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        token_count: cumulative_usage.completion_tokens,
+                        created_at: Utc::now(),
+                    };
+                    let _ = self.database.add_message(&asst_msg).await;
+                }
 
                 let _ = self.event_sender.send(AgentEvent::TaskStatusChanged {
                     status: TaskStatus::Completed,
