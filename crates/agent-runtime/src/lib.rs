@@ -20,10 +20,12 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{error, info};
 use uuid::Uuid;
 
+pub mod business_coordinator;
 pub mod supervisor;
 pub mod worker_dispatcher;
 pub mod workflow_scheduler;
 
+pub use business_coordinator::*;
 pub use supervisor::*;
 pub use worker_dispatcher::*;
 pub use workflow_scheduler::*;
@@ -32,6 +34,9 @@ pub use workflow_scheduler::*;
 pub enum RuntimeError {
     #[error("Core error: {0}")]
     Core(#[from] agent_core::CoreError),
+
+    #[error("DAG error: {0}")]
+    Dag(#[from] agent_core::DagError),
 
     #[error("Storage error: {0}")]
     Storage(#[from] agent_storage::StorageError),

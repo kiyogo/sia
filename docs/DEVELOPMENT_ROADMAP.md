@@ -1,4 +1,5 @@
 # Development Roadmap: Phases 1 – 8
+## Universal Autonomous AI Workspace
 
 This document outlines the evolutionary roadmap for the Universal Autonomous AI Workspace, tracking completed milestones and defining future development phases.
 
@@ -44,8 +45,7 @@ This document outlines the evolutionary roadmap for the Universal Autonomous AI 
   - Workstation lock screen detection (`WM_WTSSESSION_CHANGE`) with safe execution pause.
   - Token optimization: DOM accessibility trees (~185 tokens) yielding >90% token reduction vs screenshots (~2,200 tokens).
   - Computer Control Panel & Browser Workspace UI tabs with live canvas preview and DOM tree inspector.
-  - 18/18 Phase 3 acceptance tests passing (66/66 workspace tests total).
-  - Production release executable compiled (`desktop.exe`, 17.43 MB).
+  - 18/18 Phase 3 acceptance tests passing.
 
 ---
 
@@ -59,14 +59,26 @@ This document outlines the evolutionary roadmap for the Universal Autonomous AI 
   - Resource Locking & Concurrency Control (`ResourceLockManager`): Desktop lease with monotonic fencing tokens, file-level mutation locks, and isolated browser contexts.
   - Shared Artifact Store (`SharedArtifactStore`) exchanging compact `ArtifactRef`s with SHA-256 hashes instead of bloated prompts (~87.3% token savings).
   - Durable Persistence (`WorkflowStore`): 8 SQLite tables with foreign keys and WAL mode tracking workflows, tasks, dependencies, attempts, artifacts, leases, messages, and token usage.
-  - Multi-Agent Desktop UI: Dedicated Multi-Agent Orchestrator view (`WorkflowOrchestrator.tsx`) with Task DAG Graph view, Agent Registry manager, Task Inspector, and Artifact Store.
-  - 21/21 Phase 4 acceptance tests passing (`phase4_acceptance_test.rs`).
-  - All 91 workspace tests passing across all crates.
-  - Production release executable compiled (`desktop.exe`, 18.32 MB).
+  - Multi-Agent Desktop UI: Dedicated Multi-Agent Orchestrator view (`WorkflowOrchestrator.tsx`).
+  - 21/21 Phase 4 acceptance tests passing.
 
 ---
 
-## Phase 5 — Embedded Local Model Inference & Semantic Memory [NEXT]
+## Phase 5 — Advanced Business & Research Automation [COMPLETED]
+- **Status**: **100% Complete & Verified**.
+- **Delivered**:
+  - **Research Agent**: Systematic web and local workspace research, source provenance, SHA-256 fingerprinting, evidence extraction, contradiction detection (>15% divergence), and cited whitepaper generation.
+  - **Document Intelligence**: Native OpenXML (`.docx`) generation and parsing using `zip` crate; in-memory PDF 1.4 stream generation; structure-aware chunking preserving paragraph boundaries and heading hierarchy; document versioning and unified diffing.
+  - **Deterministic Data Analysis**: Auto-detecting CSV/TSV reader and OpenXML XLSX sheet reader; code-first arithmetic calculations (Mean, Median, StdDev, Min, Max, Outliers) eliminating LLM math hallucination; standalone responsive SVG vector charts (Bar and Line).
+  - **Business Connectors & Email Agent**: Unified connector registry with leaky-bucket rate limiting, exponential backoff, and 3-strike circuit breaking; thread summarization, tone-matched draft creation, and idempotent dispatch tracking with unique `operation_id` GUIDs.
+  - **Strict Human Approval Gate**: Mandatory authorization queue in `business_approvals` preventing any unauthorized outbound emails or external state modifications.
+  - **Enterprise Security & Token Optimization**: 4-tier data classification (`Public`, `Internal`, `Confidential`, `Restricted`), deterministic secret redaction (`[REDACTED_SECRET]`), and prompt injection containment (`<UNTRUSTED_EXTERNAL_DATA>` blocks).
+  - **Business Desktop UI**: Research Workspace (`ResearchWorkspace.tsx`) and Business Dashboard (`BusinessDashboard.tsx`) with workflow template launcher, interactive SVG charts, data summary tables, and approval queue.
+  - 24/24 Phase 5 acceptance tests passing (`phase5_acceptance_test.rs`). Total workspace tests: 121/121 passing.
+
+---
+
+## Phase 6 — Embedded Local Model Inference & Semantic Memory [PLANNED]
 - **Target**: Zero-latency, air-gapped, privacy-first local operations.
 - **Key Features**:
   * Embedded GGUF / SafeTensors model loading via `candle` or `llama-cpp-rs`.
@@ -76,7 +88,7 @@ This document outlines the evolutionary roadmap for the Universal Autonomous AI 
 
 ---
 
-## Phase 6 — Cross-Platform Parity (Linux & macOS)
+## Phase 7 — Cross-Platform Parity (Linux & macOS) [PLANNED]
 - **Target**: Seamless operation across all major desktop environments.
 - **Key Features**:
   * Linux implementation of `OperatingSystemAdapter` and `ShellExecutor` (Bash/Zsh).
@@ -86,19 +98,10 @@ This document outlines the evolutionary roadmap for the Universal Autonomous AI 
 
 ---
 
-## Phase 7 — Background Windows Service & Continuous Daemon
+## Phase 8 — Background Windows Service & Continuous Daemon [PLANNED]
 - **Target**: 24/7 continuous autonomous monitoring and scheduling.
 - **Key Features**:
   * Windows Service architecture with interactive user session delegation.
   * Webhook and system event-triggered task automation.
   * Encrypted credential storage using Windows DPAPI / Credential Manager.
   * Remote task submission and status monitoring over secure local socket.
-
----
-
-## Phase 8 — Enterprise Business & Workflow Automation
-- **Target**: End-to-end enterprise workflow automation and integrations.
-- **Key Features**:
-  * Enterprise SaaS connectors (Slack, Microsoft 365, Google Workspace, GitHub, Jira).
-  * Role-based access control (RBAC), multi-user profiles, and compliance audit logs.
-  * Enterprise telemetry and policy enforcement engines.

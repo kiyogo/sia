@@ -8,6 +8,10 @@ pub enum AgentType {
     Browser,
     Computer,
     Research,
+    Document,
+    DataAnalysis,
+    Email,
+    Business,
     Custom(String),
 }
 
@@ -19,6 +23,10 @@ impl std::fmt::Display for AgentType {
             AgentType::Browser => write!(f, "Browser"),
             AgentType::Computer => write!(f, "Computer"),
             AgentType::Research => write!(f, "Research"),
+            AgentType::Document => write!(f, "Document"),
+            AgentType::DataAnalysis => write!(f, "DataAnalysis"),
+            AgentType::Email => write!(f, "Email"),
+            AgentType::Business => write!(f, "Business"),
             AgentType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
@@ -33,6 +41,10 @@ impl std::str::FromStr for AgentType {
             "Browser" => Ok(AgentType::Browser),
             "Computer" => Ok(AgentType::Computer),
             "Research" => Ok(AgentType::Research),
+            "Document" => Ok(AgentType::Document),
+            "DataAnalysis" => Ok(AgentType::DataAnalysis),
+            "Email" => Ok(AgentType::Email),
+            "Business" => Ok(AgentType::Business),
             other => Ok(AgentType::Custom(other.to_string())),
         }
     }
@@ -53,6 +65,14 @@ pub enum AgentCapability {
     DesktopInput,
     WebSearch,
     DocumentSummarization,
+    DocumentParsing,
+    DocumentGeneration,
+    DataAnalysis,
+    ChartGeneration,
+    EmailReading,
+    EmailDrafting,
+    CalendarManagement,
+    BusinessCoordination,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +224,96 @@ impl AgentRegistry {
             ],
             required_permissions: vec!["network_read".to_string()],
             max_concurrency: 3,
+            is_enabled: true,
+            model_name: None,
+        });
+
+        // 6. Document Specialist
+        self.register_agent(AgentDefinition {
+            id: "agent_document".to_string(),
+            agent_type: AgentType::Document,
+            display_name: "Universal Document Specialist".to_string(),
+            capabilities: vec![
+                AgentCapability::DocumentParsing,
+                AgentCapability::DocumentGeneration,
+                AgentCapability::DocumentSummarization,
+            ],
+            supported_tools: vec![
+                "doc_parse".to_string(),
+                "doc_generate_docx".to_string(),
+                "doc_generate_pdf".to_string(),
+                "doc_chunk".to_string(),
+            ],
+            required_permissions: vec!["workspace_write".to_string()],
+            max_concurrency: 2,
+            is_enabled: true,
+            model_name: None,
+        });
+
+        // 7. Data Analysis Agent
+        self.register_agent(AgentDefinition {
+            id: "agent_data".to_string(),
+            agent_type: AgentType::DataAnalysis,
+            display_name: "Tabular Data Analyst".to_string(),
+            capabilities: vec![
+                AgentCapability::DataAnalysis,
+                AgentCapability::ChartGeneration,
+            ],
+            supported_tools: vec![
+                "data_summarize".to_string(),
+                "data_group_by".to_string(),
+                "data_outliers".to_string(),
+                "chart_bar_svg".to_string(),
+                "chart_line_svg".to_string(),
+            ],
+            required_permissions: vec!["workspace_read".to_string()],
+            max_concurrency: 2,
+            is_enabled: true,
+            model_name: None,
+        });
+
+        // 8. Email & Calendar Agent
+        self.register_agent(AgentDefinition {
+            id: "agent_email".to_string(),
+            agent_type: AgentType::Email,
+            display_name: "Enterprise Email & Calendar Agent".to_string(),
+            capabilities: vec![
+                AgentCapability::EmailReading,
+                AgentCapability::EmailDrafting,
+                AgentCapability::CalendarManagement,
+            ],
+            supported_tools: vec![
+                "email_search".to_string(),
+                "email_read".to_string(),
+                "email_draft".to_string(),
+                "email_send_approval".to_string(),
+                "calendar_events".to_string(),
+                "calendar_conflicts".to_string(),
+            ],
+            required_permissions: vec!["external_side_effect".to_string()],
+            max_concurrency: 1,
+            is_enabled: true,
+            model_name: None,
+        });
+
+        // 9. Business Workflow Coordinator
+        self.register_agent(AgentDefinition {
+            id: "agent_business".to_string(),
+            agent_type: AgentType::Business,
+            display_name: "Business Workflow Coordinator".to_string(),
+            capabilities: vec![
+                AgentCapability::BusinessCoordination,
+                AgentCapability::TaskDecomposition,
+                AgentCapability::ResultVerification,
+            ],
+            supported_tools: vec![
+                "workflow_market_research".to_string(),
+                "workflow_data_reporting".to_string(),
+                "workflow_email_assist".to_string(),
+                "workflow_hybrid".to_string(),
+            ],
+            required_permissions: vec!["supervisor".to_string()],
+            max_concurrency: 1,
             is_enabled: true,
             model_name: None,
         });

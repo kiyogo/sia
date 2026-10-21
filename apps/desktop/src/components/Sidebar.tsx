@@ -10,6 +10,8 @@ import {
   Monitor,
   Globe,
   Network,
+  BookOpen,
+  Briefcase,
   Settings,
   Activity,
   Cpu,
@@ -40,6 +42,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'computer', label: 'Computer Control', icon: <Monitor className="w-5 h-5" /> },
     { id: 'browser', label: 'Browser Agent', icon: <Globe className="w-5 h-5" /> },
     { id: 'workflows', label: 'Multi-Agent', icon: <Network className="w-5 h-5" /> },
+    { id: 'research', label: 'Research & Docs', icon: <BookOpen className="w-5 h-5" /> },
+    { id: 'business', label: 'Business & Data', icon: <Briefcase className="w-5 h-5" /> },
     { id: 'workspace', label: 'Workspace', icon: <FolderTree className="w-5 h-5" /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal className="w-5 h-5" /> },
     {

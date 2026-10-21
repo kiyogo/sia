@@ -20,6 +20,8 @@ futures = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+walkdir = { workspace = true }
+zip = "9.0.5"
 
 [dev-dependencies]
 tempfile = { workspace = true }

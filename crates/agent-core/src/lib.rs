@@ -1,22 +1,30 @@
 pub mod agent_loop;
+pub mod business;
 pub mod coding_loop;
+pub mod data;
 pub mod diagnostics;
+pub mod document;
 pub mod error;
 pub mod model;
 pub mod orchestration;
+pub mod research;
 pub mod token_optimizer;
 pub mod tool_router;
 pub mod verifier;
 
 pub use agent_loop::{AgentEvent, AgentLoop};
+pub use business::*;
 pub use coding_loop::{CodingMode, CodingWorkflowEngine};
+pub use data::*;
 pub use diagnostics::{deduplicate_diagnostics, DeduplicatedDiagnostics};
+pub use document::*;
 pub use error::{CoreError, CoreResult};
 pub use model::{
     ChatMessage, FunctionCall, MockModelProvider, ModelProvider, ModelRequest, ModelResponse,
     ModelUsage, OpenAiCompatibleProvider, ToolCall,
 };
 pub use orchestration::*;
+pub use research::*;
 pub use token_optimizer::{ContextBudgetConfig, TokenOptimizer};
 pub use tool_router::{TaskStrategy, ToolStrategyRouter, ToolTier};
 pub use verifier::{ActionVerifier, VerificationOutcome, VerifyCondition};
@@ -294,5 +302,166 @@ mod tests {
         lock_mgr.unlock_file(&file_path).await;
         let lock_again = lock_mgr.lock_file(&file_path, "CodingAgent2", task_id2).await;
         assert!(lock_again.is_ok());
+    }
+
+    #[test]
+    fn test_research_source_and_evidence_contradiction() {
+        let mut registry = ResearchSourceRegistry::new();
+        let (src1_id, _) = registry.register_source(
+            "https://market-report-a.com".to_string(),
+            "Source A Market 2026".to_string(),
+            agent_storage::SourceType::Web,
+            Some("2026-01-10".to_string()),
+            "Market size is projected at $100B with steady growth.",
+        );
+
+        let (src2_id, _) = registry.register_source(
+            "https://market-report-b.com".to_string(),
+            "Source B Market 2026".to_string(),
+            agent_storage::SourceType::Web,
+            Some("2026-02-15".to_string()),
+            "Market size is estimated at $250B due to unprecedented adoption.",
+        );
+
+        let mut store = EvidenceStore::new();
+        store.add_evidence(
+            src1_id,
+            None,
+            "Market size is 100B in 2026".to_string(),
+            agent_storage::EvidenceType::Fact,
+            Some("p. 1".to_string()),
+            0.9,
+        );
+        store.add_evidence(
+            src2_id,
+            None,
+            "Market size is 250B in 2026".to_string(),
+            agent_storage::EvidenceType::Fact,
+            Some("Executive Summary".to_string()),
+            0.92,
+        );
+
+        let contradictions = store.detect_contradictions();
+        assert_eq!(contradictions.len(), 1);
+        assert_eq!(contradictions[0].entity_or_metric, "market");
+    }
+
+    #[test]
+    fn test_document_docx_and_pdf_generation_and_parsing() {
+        let temp = tempdir().expect("tempdir");
+        let docx_path = temp.path().join("report.docx");
+        let pdf_path = temp.path().join("report.pdf");
+
+        let content = DocumentContent {
+            title: "Q3 Business Execution Report".to_string(),
+            elements: vec![
+                DocumentElementType::Heading { level: 1, text: "Executive Summary".to_string() },
+                DocumentElementType::Paragraph { text: "All quarterly milestones were achieved on schedule.".to_string() },
+                DocumentElementType::Table {
+                    headers: vec!["Metric".to_string(), "Target".to_string(), "Actual".to_string()],
+                    rows: vec![
+                        vec!["Revenue".to_string(), "$10M".to_string(), "$11.2M".to_string()],
+                        vec!["NPS".to_string(), "65".to_string(), "72".to_string()],
+                    ],
+                },
+            ],
+        };
+
+        // 1. Generate DOCX
+        DocumentGenerator::generate_docx(&content, &docx_path).expect("generate docx");
+        assert!(docx_path.exists());
+        assert!(std::fs::metadata(&docx_path).unwrap().len() > 0);
+
+        // Parse DOCX
+        let parsed_docx = DocumentParser::parse_file(&docx_path).expect("parse docx");
+        assert_eq!(parsed_docx.format, "DOCX");
+        assert!(parsed_docx.raw_text.contains("All quarterly milestones were achieved"));
+
+        // 2. Generate PDF
+        DocumentGenerator::generate_pdf(&content, &pdf_path).expect("generate pdf");
+        assert!(pdf_path.exists());
+        assert!(std::fs::metadata(&pdf_path).unwrap().len() > 0);
+
+        // Parse PDF
+        let parsed_pdf = DocumentParser::parse_file(&pdf_path).expect("parse pdf");
+        assert_eq!(parsed_pdf.format, "PDF");
+    }
+
+    #[test]
+    fn test_data_analysis_summary_and_chart_generation() {
+        let csv_data = r#"Category,Revenue,Units
+Software,12000,50
+Services,8500,20
+Software,15000,60
+Hardware,22000,10
+Services,9200,22
+"#;
+        let table = SpreadsheetReader::parse_csv_content(csv_data, "Sales", ',').expect("parse csv");
+        assert_eq!(table.total_rows, 5);
+
+        // Summarize Revenue
+        let summary = DataAnalyzer::summarize_column(&table, "Revenue").expect("summarize revenue");
+        assert_eq!(summary.count, 5);
+        assert_eq!(summary.min, 8500.0);
+        assert_eq!(summary.max, 22000.0);
+        assert_eq!(summary.sum, 66700.0);
+
+        // Group by Category
+        let grouped = DataAnalyzer::group_by(&table, "Category", "Revenue", "sum").expect("group by");
+        assert_eq!(grouped.len(), 3);
+        assert_eq!(grouped[0].key, "Software");
+        assert_eq!(grouped[0].aggregate_value, 27000.0);
+
+        // Chart generation
+        let series = vec![
+            ChartSeries { label: "Software".to_string(), value: 27000.0 },
+            ChartSeries { label: "Hardware".to_string(), value: 22000.0 },
+            ChartSeries { label: "Services".to_string(), value: 17700.0 },
+        ];
+        let svg = ChartGenerator::generate_bar_chart_svg("Revenue by Category", &series, 600, 400);
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("Revenue by Category"));
+        assert!(svg.contains("Software"));
+    }
+
+    #[tokio::test]
+    async fn test_email_and_calendar_adapters() {
+        let email_provider = MockTestEmailProvider::new();
+        assert!(email_provider.is_connected().await);
+
+        // Search messages
+        let msgs = email_provider.search_messages("market", 10).await.expect("search msgs");
+        assert_eq!(msgs.len(), 1);
+        assert!(msgs[0].subject.contains("Market Research"));
+
+        // Draft message
+        let draft_req = EmailDraftRequest {
+            to: vec!["recipient@example.com".to_string()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Re: Market Research".to_string(),
+            body: "Here is the completed research analysis.".to_string(),
+            operation_id: "op_test_12345".to_string(),
+        };
+        let draft_id = email_provider.create_draft(&draft_req).await.expect("create draft");
+
+        // Sending without approval MUST be rejected
+        let rejected = email_provider.send_message_with_approval(&draft_id, "invalid_token").await;
+        assert!(rejected.is_err());
+
+        // With valid approval token, sending succeeds
+        email_provider.add_valid_approval_token("token_approved_admin").await;
+        let sent_id = email_provider
+            .send_message_with_approval(&draft_id, "token_approved_admin")
+            .await
+            .expect("send with approval");
+        assert!(sent_id.starts_with("sent_"));
+
+        // Duplicate send with same operation ID must be blocked (Idempotency)
+        let dup = email_provider
+            .send_message_with_approval(&draft_id, "token_approved_admin")
+            .await;
+        assert!(dup.is_err());
+        assert!(dup.unwrap_err().contains("Duplicate send prevented"));
     }
 }

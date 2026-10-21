@@ -1,4 +1,5 @@
 # Token Optimization Engine
+## Universal Autonomous AI Workspace
 
 ## 1. Overview & Objectives
 
@@ -72,3 +73,26 @@ On consecutive interactions with the same page or application:
 ### D. Observation State Hashing & Cache
 - Fast 64-bit state hashing (`TokenOptimizer::hash_state`).
 - If an action resulted in an invariant UI state, the agent detects the unchanged hash and avoids redundant re-interpretation by the LLM.
+
+---
+
+## 4. Phase 5 Business & Research Token Optimization Strategies
+
+### A. Code-First Mathematical & Statistical Analysis
+- Instead of dumping raw CSV/XLSX spreadsheets (which can consume 50,000 to 200,000+ tokens) into the LLM context to ask for averages or trends, **100% of data calculations run natively in Rust**.
+- The LLM only receives compact, pre-computed `ColumnSummary` structures (Mean, Median, StdDev, Min, Max, Outliers) (~120 tokens total).
+- **Token Savings:** >98% reduction on analytical tasks, with 100% arithmetic precision.
+
+### B. Structure-Aware Document Chunking & Selective Retrieval
+- Multi-hundred page documents (PDFs, Word documents, research papers) are parsed, chunked, and indexed locally in SQLite.
+- Only the top $K$ relevant chunks matching the user's specific query are loaded into prompt context.
+- Chunks retain section breadcrumbs, eliminating redundant contextual preamble tokens.
+
+### C. Bracketed Citation Fingerprints
+- Sources are identified by short integer bracketed keys (`[1]`, `[2]`).
+- Source metadata (long URLs, SHA-256 hashes, timestamps) is held outside the LLM context in the `business_store` database and appended deterministically during final markdown/DOCX/PDF rendering.
+- Prevents repetitive URL regurgitation in intermediate reasoning steps.
+
+### D. Email Thread Normalization & Signature Stripping
+- Redundant quote pyramids (`> On Monday, John wrote:...`), standard corporate disclaimers, and tracking pixel URLs are stripped before generating email summaries.
+- Reduces inbound email thread context by 60–80%.

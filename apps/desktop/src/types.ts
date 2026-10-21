@@ -1,4 +1,4 @@
-export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'coding' | 'computer' | 'browser' | 'workflows' | 'workspace' | 'terminal' | 'settings';
+export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'coding' | 'computer' | 'browser' | 'workflows' | 'business' | 'research' | 'workspace' | 'terminal' | 'settings';
 
 export type CodingMode = 'Ask' | 'Plan' | 'Build';
 
@@ -261,3 +261,98 @@ export type AgentEvent =
   | { FinalAnswer: { content: string } }
   | { Error: { message: string } }
   | { TaskStatusChanged: { status: TaskStatus } };
+
+export interface ResearchSourceDto {
+  id: string;
+  url_or_path: string;
+  title: string;
+  source_type: 'Web' | 'WorkspaceFile' | 'Api' | 'Document';
+  retrieved_at: string;
+  published_date?: string;
+  content_hash: string;
+  verification_status: 'Verified' | 'Unverified' | 'Contradicted' | 'Outdated';
+  raw_snippet?: string;
+}
+
+export interface EvidenceItemDto {
+  id: string;
+  source_id: string;
+  task_id?: string;
+  claim_text: string;
+  evidence_type: 'Fact' | 'Claim' | 'Inference' | 'Estimate' | 'Opinion';
+  page_or_section?: string;
+  confidence_score: number;
+  verification_status: 'Verified' | 'Unverified' | 'Contradicted' | 'Outdated';
+  created_at: string;
+}
+
+export interface DocumentMetadataDto {
+  id: string;
+  file_path: string;
+  format: string;
+  file_size_bytes: number;
+  title?: string;
+  page_count?: number;
+  word_count?: number;
+  table_count?: number;
+  content_hash: string;
+  parsed_summary?: string;
+  created_at: string;
+}
+
+export interface BusinessConnectorDto {
+  id: string;
+  provider: string;
+  auth_type: string;
+  status: 'Connected' | 'Disconnected' | 'PendingAuth' | 'RateLimited' | 'Error';
+  scopes: string[];
+  rate_limit_per_minute: number;
+  last_connected_at?: string;
+  created_at: string;
+}
+
+export interface EmailDraftDto {
+  id: string;
+  connector_id: string;
+  thread_id?: string;
+  to_recipients: string[];
+  cc_recipients: string[];
+  bcc_recipients: string[];
+  subject: string;
+  body: string;
+  status: 'Draft' | 'PendingApproval' | 'Approved' | 'Sent' | 'Cancelled';
+  operation_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BusinessApprovalDto {
+  id: string;
+  workflow_id?: string;
+  task_id?: string;
+  action_type: string;
+  target_resource: string;
+  payload_preview: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Expired';
+  approved_by?: string;
+  decision_reason?: string;
+  created_at: string;
+  resolved_at?: string;
+}
+
+export interface ChartSeriesDto {
+  label: string;
+  value: number;
+}
+
+export interface ColumnSummaryDto {
+  column_name: string;
+  count: number;
+  null_count: number;
+  sum: number;
+  mean: number;
+  median: number;
+  min: number;
+  max: number;
+  std_dev: number;
+}

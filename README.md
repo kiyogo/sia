@@ -1,7 +1,7 @@
 # Universal Autonomous AI Workspace
 ### Windows-First, Cross-Platform-Ready, Open-Source-First Desktop Agent Platform
 
-An autonomous, multi-purpose AI Workspace designed to perform real work on Windows. The platform bridges natural language instructions from users with native system capabilities: executing terminal commands in CMD/PowerShell, analyzing and modifying codebases across multiple languages, controlling Windows applications, navigating modern web browsers via Playwright MCP, routing tasks through cost-optimized execution paths, persisting task milestones in SQLite, and strictly optimizing token consumption.
+An autonomous, multi-purpose AI Workspace designed to perform real work on Windows. The platform bridges natural language instructions from users with native system capabilities: executing terminal commands in CMD/PowerShell, analyzing and modifying codebases across multiple languages, controlling Windows applications, navigating modern web browsers via Playwright MCP, orchestrating complex Multi-Agent Task DAGs, conducting systematic evidence-grounded research, processing multi-format documents, performing deterministic data analytics with responsive vector charts, and automating business communications through an approval-gated email and calendar engine.
 
 ---
 
@@ -13,19 +13,19 @@ The application is structured as a multi-crate Rust workspace with a desktop UI 
 aai/
 ├── apps/
 │   └── desktop/                  # Tauri 2 + React + TypeScript + Tailwind UI
-│       ├── src/                  # React UI (WorkflowOrchestrator, ComputerControl, BrowserWorkspace, CodingWorkspace, Chat, Tasks, Terminal)
+│       ├── src/                  # React UI (ResearchWorkspace, BusinessDashboard, WorkflowOrchestrator, ComputerControl, BrowserWorkspace, CodingWorkspace, Chat, Tasks, Terminal)
 │       └── src-tauri/            # Tauri 2 host binary & IPC command handlers
 ├── crates/
 │   ├── agent-platform/           # OS-agnostic traits, Win32 adapters, generic stubs & MultiLanguageAdapter
-│   ├── agent-security/           # Permission tiers, boundary sandbox, DesktopOwnershipManager, Emergency Stop
-│   ├── agent-storage/            # SQLite embedded database with WAL mode, schema migrations & WorkflowStore
+│   ├── agent-security/           # Permission tiers, DataClassification, SecretRedactor, PromptInjectionDefense, DesktopOwnershipManager
+│   ├── agent-storage/            # SQLite embedded database with WAL mode, schema migrations, WorkflowStore & BusinessStore
 │   ├── agent-tools/              # Browser MCP, Windows MCP, Git, OpenCode code_edit/patch, search, repo_map
-│   ├── agent-core/               # Agent loop, Orchestration subsystem (Task DAG, Agent Registry, Locks, Artifacts), Tool Router
-│   └── agent-runtime/            # Supervisor engine, Worker dispatcher, Workflow scheduler, task runner, and recovery engine
-├── docs/                         # Comprehensive architecture, multi-agent, security, token optimization, and QA reports
+│   ├── agent-core/               # Research Engine, Document Intelligence, Data Analysis & SVG Charts, Business Connectors, Task DAG, Tool Router
+│   └── agent-runtime/            # Business Coordinator, Supervisor engine, Worker dispatcher, Workflow scheduler, task runner, and recovery engine
+├── docs/                         # Comprehensive architecture, multi-agent, business automation, research, security, and QA reports
 ├── scripts/                      # PowerShell setup, dev, test, and release build automation scripts
 ├── LICENSE                       # MIT License
-├── THIRD_PARTY_NOTICES.md        # Open-source attributions (Playwright, Windows-MCP, OpenCode, Tauri, etc.)
+├── THIRD_PARTY_NOTICES.md        # Open-source attributions (Playwright, Windows-MCP, OpenCode, Tauri, Zip, etc.)
 └── README.md
 ```
 
@@ -33,73 +33,63 @@ aai/
 
 ## 2. Core Capabilities Across Phases
 
-### 2.1 Phase 4: Advanced Multi-Agent Orchestration System
-1. **Supervisor AI Engine**:
-   - Decomposes high-level natural language user goals into structured, acyclic **Task Directed Acyclic Graphs (DAG)**.
-   - Deterministic verification of subtask completion and autonomous self-correction loop that replans failed tasks with targeted fixes.
-2. **Task Directed Acyclic Graph (DAG) Engine**:
-   - Strict cycle detection using Kahn's topological sorting algorithm.
-   - Evaluates ready tasks whose dependencies have succeeded, validating against dangling nodes.
-3. **Agent Registry & Worker Specialization**:
-   - Centralized catalog with strict capability enforcement across 5 specialized agent roles:
-     - *Supervisor Agent*: Goal decomposition, replanning, milestone synthesis.
-     - *Coding Agent*: OpenCode exact editing, multi-file atomic patching, diagnostics, git operations.
-     - *Browser Agent*: Playwright MCP web navigation, DOM accessibility inspection, form filling.
-     - *Computer Agent*: Windows-MCP & Win32 desktop application control, window switching, UIA trees.
-     - *Research Worker*: Web search, document summarization, codebase outlining.
-4. **Tokio Task Scheduler & Concurrency Control**:
-   - Bounded concurrency (1 to 4 parallel workers) executing tasks via async Tokio worker pool.
-   - Dynamic pause, resume, and cancellation support.
-5. **Resource Locking & Fencing Tokens**:
-   - Single-controller interactive Desktop Lock with lease renewal.
-   - File-level mutation locks preventing race conditions between concurrent workers.
-   - Monotonic integer fencing tokens invalidating stale worker commits.
-6. **Shared Artifact Store**:
-   - Content-addressed artifact storage (SHA-256) passing compact `ArtifactRef`s (**~45 tokens**) instead of injecting full file contents into LLM context (**87.3% token savings**).
-7. **Durable Persistence**:
-   - 8 SQLite WAL tables tracking workflows, tasks, dependencies, attempts, artifacts, leases, messages, and token usage.
-8. **Desktop UI: Workflow Orchestrator**:
-   - Interactive Task DAG Graph view, Agent Registry manager, Artifact Store inspector, and Task Inspector slide-over.
+### 2.1 Phase 5: Advanced Business & Research Automation
+1. **Research Agent & Provenance Engine**:
+   - Systematic web and local workspace research querying `LocalWorkspaceSearchProvider` and external search adapters.
+   - Source provenance tracking with computed SHA-256 integrity digests, HTTP etags, and credibility scoring.
+   - Sentence/offset evidence extraction and automated quantitative contradiction detection (>15% divergence flagged).
+   - Generates comprehensive markdown whitepapers with verifiable, bracketed citations (`[1]`, `[2]`).
+2. **Document Intelligence Subsystem**:
+   - Multi-format parser for Markdown, HTML, plain text, and OpenXML DOCX.
+   - Native OpenXML (`.docx`) package generator with standard ECMA-376 structure (`word/document.xml`, `[Content_Types].xml`, `_rels`) using pure Rust `zip` crate.
+   - Headless PDF 1.4 binary stream generator with standard xref tables and font dictionaries.
+   - Structure-aware chunking preserving paragraph boundaries and heading hierarchy with sliding overlap.
+   - Document revision versioning and unified diffing.
+3. **Deterministic Data Analysis & Vector Charting**:
+   - Auto-detecting CSV/TSV reader and OpenXML XLSX sheet reader.
+   - Code-first arithmetic computation: Mean, Median, Sample Standard Deviation, Min, Max, and Tukey IQR Outlier Detection ($Q_1 - 1.5 \times IQR$, $Q_3 + 1.5 \times IQR$).
+   - Multi-level categorical group-by aggregations (Sum, Count, Average).
+   - Standalone responsive SVG vector chart generation (Bar and Line charts) with dark/light theme support.
+4. **Business Connectors & Email Subsystem**:
+   - Resilient connector registry with leaky-bucket rate limiting, exponential backoff with jitter, and 3-strike circuit breaking.
+   - Thread summarization, tone-matched draft creation, and idempotent dispatch tracking with unique `operation_id` GUIDs.
+   - **Strict Human Approval Gate**: Compulsory authorization queue in `business_approvals` preventing any unauthorized outbound emails or external mutations.
+   - Calendar availability checking, UTC time normalization, and conflict resolution.
+5. **Business Workflow Coordinator**:
+   - 5 pre-packaged business templates (`market_research`, `data_reporting`, `email_assistance`, `research_to_document`, `hybrid_pipeline`) orchestrating tasks on Phase 4's durable Task DAG.
+6. **Enterprise Security & Token Optimization**:
+   - 4-tier data classification (`Public`, `Internal`, `Confidential`, `Restricted`).
+   - Deterministic secret redaction replacing API keys, passwords, and tokens with `[REDACTED_SECRET]`.
+   - Structural prompt injection containment wrapping external data in `<UNTRUSTED_EXTERNAL_DATA>` blocks.
+   - Code-first analytics saving **>98% of tokens** compared to injecting raw datasets into LLMs.
+7. **Desktop UI: Research Workspace & Business Dashboard**:
+   - **Research Workspace**: Query input, evidence cross-examination table, contradiction badge indicators, and cited markdown report preview.
+   - **Business Dashboard**: Template launcher, interactive SVG charts, data summary tables, and one-click Human Approval Queue.
 
-### 2.2 Phase 3: Advanced Computer & Browser Agent
-1. **Windows Desktop Control**:
-   - `WindowsComputerControlAdapter` enumerates top-level application windows, focuses targets, retrieves client coordinates, and queries workstation lock status (`WM_WTSSESSION_CHANGE`).
-   - `Windows-MCP` integration with Python 3.14 via Astral `uv` for deep Windows accessibility and UI automation.
-   - Screen capture with focused window clipping to minimize unnecessary pixel processing.
-2. **Playwright Browser Automation**:
-   - `BrowserMcpManager` orchestrating `@playwright/mcp` over stdio JSON-RPC.
-   - Real-time tab management, multi-tab switching, navigation, form inputs, and click emulation.
-   - Compact DOM accessibility tree extraction with numeric element reference indexing.
-   - File download tracking with SHA-256 integrity verification and automated upload handling.
-3. **6-Tier Tool Strategy Router**:
-   - Routes user goals through the lowest token and latency cost tier:
-     `Direct API` → `Filesystem / DB` → `Shell / CLI` → `Playwright DOM` → `Windows UIA` → `Screenshot / Vision`.
-4. **Action Verifier (Observe-Interpret-Act-Verify)**:
-   - Evaluates explicit post-conditions (`UrlMatches`, `ElementVisible`, `FileExists`, `WindowActive`, `ExitCodeZero`) before declaring success.
-5. **Desktop Ownership & Safety Framework**:
-   - `DesktopOwnershipManager` single-controller leasing (default 30s) prevents conflicting inputs.
-   - User takeover detection and instant Emergency Stop (`< 5ms`).
-   - Workstation lock screen safety pauses automation automatically.
-6. **Token Optimization**:
-   - Accessibility-first trees (~185 tokens) yield **>90% token reduction** over traditional vision screenshots (~2,200 tokens).
-   - Incremental state hash delta pruning avoids re-sending unchanged UI state.
-7. **Desktop UI Control Panels**:
-   - **Computer Control**: Live screen canvas preview, lease countdown bar, takeover button, window list table.
-   - **Browser Workspace**: Tab strip, navigation bar, interactive DOM tree inspector, and form action executor.
+### 2.2 Phase 4: Advanced Multi-Agent Orchestration System
+- **Supervisor AI Engine**: Goal decomposition, dependency graphing, and dynamic replanning.
+- **Task Directed Acyclic Graph (DAG) Engine**: Strict cycle detection using Kahn's topological sorting algorithm.
+- **Agent Registry & Worker Specialization**: Supervisor, Coding (OpenCode), Browser (Playwright MCP), Computer (Windows-MCP / Win32), Research, Document, Data Analysis, and Email workers.
+- **Tokio Task Scheduler**: Bounded concurrency (1 to 4 parallel workers) with pause, resume, and cancellation.
+- **Resource Locking**: Single-controller desktop lock, file mutation locks, and monotonic fencing tokens.
+- **Shared Artifact Store**: Content-addressed artifact storage (SHA-256) passing compact `ArtifactRef`s (**87.3% token savings**).
+- **Durable Persistence**: 8 SQLite tables tracking workflows, tasks, dependencies, attempts, artifacts, leases, messages, and token usage.
+- **Desktop UI**: Dedicated Multi-Agent Workflow Orchestrator tab (`WorkflowOrchestrator.tsx`).
 
-### 2.2 Phase 2: Advanced Autonomous Coding Agent
-- **OpenCode Architectural Integration**: `CodeEditTool` exact-match replacement, `CodePatchTool` atomic multi-file rollback.
-- **Multi-Language Intelligence**: Automated project detection for Rust, TypeScript/JS, Python, and C/C++.
-- **Compiler Diagnostics**: Parsers for `rustc`, `tsc`, and Python tracebacks with 85% token deduplication.
-- **Git Safety & Working Tree Protection**: Safe read-only inspection; destructive git commands strictly blocked.
-- **Three Coding Modes**: `Ask` (read-only), `Plan` (diff preview), `Build` (autonomous repair loop).
-- **Desktop Coding Workspace**: Source Viewer, Unified Diff Inspector, Step Tracker, and Problems Panel.
+### 2.3 Phase 3: Advanced Computer & Browser Agent
+- **Windows Desktop Control**: Window enumeration, focus, coordinates, and workstation lock status detection.
+- **Playwright Browser Automation**: Cross-browser navigation, DOM accessibility inspection, form filling, and file transfer tracking.
+- **6-Tier Tool Strategy Router**: Routes through the lowest-cost tier (`Direct API` → `Filesystem` → `CLI` → `DOM` → `UIA` → `Vision`).
+- **Safety Framework**: Single-controller lease, user takeover detection, and instant Emergency Stop (< 5ms).
 
-### 2.3 Phase 1: General Agent Foundation
-- **AI Chat & Streaming**: Conversational UI with streaming tool invocation cards.
-- **Terminal Execution**: CMD & PowerShell streaming executors with timeout control and working directory bounds.
-- **SQLite Persistence & Checkpoints**: Checkpoint rollback with crash resilience.
-- **Emergency Stop**: Global kill switch halting all child processes and loops.
+### 2.4 Phase 2: Advanced Autonomous Coding Agent
+- **OpenCode Architecture**: `CodeEditTool` exact-match replacement, `CodePatchTool` atomic multi-file rollback.
+- **Multi-Language Intelligence**: Rust, TypeScript/JS, Python, and C/C++ diagnostic parsers and symbol maps.
+- **Git Safety**: Safe status and diff inspection; destructive commands blocked.
+- **Execution Modes**: `Ask` (read-only), `Plan` (diff preview), `Build` (autonomous repair loop).
+
+### 2.5 Phase 1: General Agent Foundation
+- Conversational chat with streaming tool cards, terminal executors (CMD & PowerShell), SQLite checkpointing, and global kill switch.
 
 ---
 
@@ -122,7 +112,7 @@ aai/
 .\scripts\setup.ps1
 ```
 
-### Step 2 — Run the Test Suite (All 91 Tests)
+### Step 2 — Run the Test Suite (All 121 Tests)
 ```powershell
 .\scripts\test.ps1
 ```
@@ -136,64 +126,48 @@ aai/
 ```powershell
 .\scripts\build.ps1
 ```
-The output binary will be created at: `target\release\desktop.exe` (~18.3 MB).
+The output binary will be created at: `target\release\desktop.exe`.
 
 ---
 
-## 5. Acceptance Test Verification (91 / 91 Passed)
+## 5. Acceptance Test Verification (121 / 121 Passed)
 
-### Phase 4 Acceptance Tests (21 / 21 Passed)
+### Phase 5 Acceptance Tests (24 / 24 Passed)
 | Test Identifier | Capability Tested | Status |
 | :--- | :--- | :--- |
-| `test_p4_01_supervisor_plan_generation` | Decomposing natural language goals into DAG tasks via SupervisorEngine | **PASS** |
-| `test_p4_02_task_dag_cycle_detection` | Strict Kahn topological sort rejecting circular dependencies | **PASS** |
-| `test_p4_03_agent_registry_capability_matching` | Strict capability validation mapping tasks to specialized workers | **PASS** |
-| `test_p4_04_tokio_scheduler_bounded_concurrency` | Parallel execution with bounded concurrency (1-4 workers) | **PASS** |
-| `test_p4_05_desktop_lock_single_controller` | Exclusive single-controller lease on desktop with mutual exclusion | **PASS** |
-| `test_p4_06_file_lock_concurrent_mutations` | Workspace path locks preventing concurrent file collisions | **PASS** |
-| `test_p4_07_browser_context_isolation` | Isolated browser contexts per parallel workflow | **PASS** |
-| `test_p4_08_shared_artifact_store_hashing` | SHA-256 content-addressable storage and ArtifactRef passing | **PASS** |
-| `test_p4_09_structured_message_bus` | Inter-agent typed message contracts and delivery | **PASS** |
-| `test_p4_10_deterministic_verification_engine` | Deterministic verification of exit codes, files, and outputs | **PASS** |
-| `test_p4_11_autonomous_replanning_on_failure` | Dynamic DAG injection of diagnostic repair tasks upon subtask failure | **PASS** |
-| `test_p4_12_workflow_persistence_sqlite` | Full state machine persistence across 8 SQLite tables in WAL mode | **PASS** |
-| `test_p4_13_crash_recovery_resume` | Resuming interrupted workflows from last completed milestone | **PASS** |
-| `test_p4_14_minimal_delegation_optimization` | Low-complexity tasks bypass supervisor overhead directly | **PASS** |
-| `test_p4_15_context_pruning_and_token_savings` | ArtifactRef exchange yielding >85% token savings over raw injection | **PASS** |
-| `test_p4_16_hierarchical_budget_enforcement` | Token ceiling enforcement across workflow, agent, and task levels | **PASS** |
-| `test_p4_17_loop_detector_repetitive_actions` | Detection and termination of repetitive tool failure loops | **PASS** |
-| `test_p4_18_sandbox_permission_inheritance` | Subtasks inherit and cannot exceed parent workflow permissions | **PASS** |
-| `test_p4_19_prompt_injection_containment` | Passive data tagging preventing malicious prompt injection attacks | **PASS** |
-| `test_p4_20_open_source_licenses` | SPDX verification of all Phase 4 dependencies and third-party notices | **PASS** |
-| `test_p4_21_no_regression_phases_1_2_3` | Zero-regression verification across Phase 1, 2, and 3 test pipelines | **PASS** |
+| `test_01_sqlite_business_store_schema` | SQLite `business_store` schema creation, tables, and indices | **PASS** |
+| `test_02_research_source_provenance_and_hash` | Source provenance, SHA-256 fingerprinting, and credibility scoring | **PASS** |
+| `test_03_evidence_extraction_and_contradiction_detection` | Evidence extraction and numerical contradiction detection (>15%) | **PASS** |
+| `test_04_research_report_generation_with_verifiable_citations` | Research report generation with bracketed citations (`[1]`) | **PASS** |
+| `test_05_mock_web_and_local_workspace_search` | `MockWebSearchProvider` and `LocalWorkspaceSearchProvider` searching | **PASS** |
+| `test_06_document_parser_multi_format` | Multi-format document parser (Markdown, HTML, Plain text, DOCX) | **PASS** |
+| `test_07_document_generator_openxml_docx` | Native OpenXML `.docx` generation with valid zip package structure | **PASS** |
+| `test_08_document_generator_pdf` | Headless PDF 1.4 stream generation with standard xref tables | **PASS** |
+| `test_09_document_chunker_structure_aware` | Structure-aware chunking preserving paragraph boundaries and headings | **PASS** |
+| `test_10_document_versioning_and_diff` | Document revision tracking, content hashes, and unified diffing | **PASS** |
+| `test_11_spreadsheet_reader_csv_delimiter_inference` | CSV delimiter auto-detection and RFC 4180 quote escaping | **PASS** |
+| `test_12_data_analyzer_column_summaries_code_first` | Deterministic computation of Mean, Median, StdDev, Min, Max | **PASS** |
+| `test_13_data_analyzer_iqr_outlier_detection` | Tukey IQR outlier detection ($Q_1 - 1.5 \times IQR$, $Q_3 + 1.5 \times IQR$) | **PASS** |
+| `test_14_data_analyzer_group_by_aggregation` | Categorical group-by aggregation (Sum, Count, Mean) | **PASS** |
+| `test_15_chart_generator_svg_bar_and_line` | Native SVG vector chart generation for Bar and Line plots | **PASS** |
+| `test_16_business_connector_registry_rate_limit_circuit_breaker` | Rate limiting, backoff, and 3-strike circuit breaking | **PASS** |
+| `test_17_email_agent_approval_gate_enforcement` | Mandatory human approval gate preventing direct email dispatch | **PASS** |
+| `test_18_email_agent_idempotent_dispatch_deduplication` | Idempotent email dispatch deduplication via `operation_id` | **PASS** |
+| `test_19_calendar_provider_free_busy_and_conflict_detection` | Free/busy calculation, UTC normalization, and meeting proposal | **PASS** |
+| `test_20_business_workflow_coordinator_templates` | Instantiation of all 5 business workflow templates onto Task DAG | **PASS** |
+| `test_21_data_classification_and_egress_rules` | 4-tier data classification and egress restriction enforcement | **PASS** |
+| `test_22_secret_redactor_deterministic_masking` | Deterministic secret redaction masking credentials to `[REDACTED_SECRET]` | **PASS** |
+| `test_23_prompt_injection_defense_passive_data_tagging` | Encapsulation of untrusted inputs in `<UNTRUSTED_EXTERNAL_DATA>` | **PASS** |
+| `test_24_end_to_end_business_pipeline_integration` | End-to-end integration: Research → Analysis → Chart → DOCX → Email draft | **PASS** |
 
-### Phase 3 Acceptance Tests (18 / 18 Passed)
-| Test Identifier | Capability Tested | Status |
-| :--- | :--- | :--- |
-| `test_p3_01_windows_mcp_connection` | Windows-MCP discovery, Python 3.14 runtime & stdio JSON-RPC | **PASS** |
-| `test_p3_02_desktop_observation_no_screenshot` | Desktop observation via accessibility tree without screenshot overhead | **PASS** |
-| `test_p3_03_notepad_automation_roundtrip` | Windows UI Automation text input, save dialog, and disk verification | **PASS** |
-| `test_p3_04_window_switching_and_focus` | Window enumeration, targeting by title/PID, and foreground focus | **PASS** |
-| `test_p3_05_browser_navigation_and_dom_snapshot` | Playwright navigation, compact DOM tree extraction, and link indexing | **PASS** |
-| `test_p3_06_form_filling_and_submission` | Form field identification, keyboard typing, submission, and validation | **PASS** |
-| `test_p3_07_file_download_workflow` | Browser file download tracking, destination path check, and SHA-256 hash | **PASS** |
-| `test_p3_08_file_upload_workflow` | File selection, input element population, upload execution, and response parsing | **PASS** |
-| `test_p3_09_hybrid_desktop_browser_workflow` | Hybrid pipeline: Web fetch -> Disk persistence -> Desktop application view | **PASS** |
-| `test_p3_10_tool_strategy_router` | 6-tier Tool Router choosing lowest-cost route | **PASS** |
-| `test_p3_11_desktop_ownership_concurrency` | Single-controller lease management, concurrent lock denial, and lease renewal | **PASS** |
-| `test_p3_12_desktop_emergency_stop` | Instant emergency interrupt aborting active control lease in < 5ms | **PASS** |
-| `test_p3_13_browser_action_permissions` | Permission boundary enforcement for destructive web actions | **PASS** |
-| `test_p3_14_token_efficiency_benchmark` | DOM accessibility pruning benchmark (>90% token reduction vs vision) | **PASS** |
-| `test_p3_15_agent_crash_recovery` | Browser session persistence and checkpoint resume after process kill | **PASS** |
-| `test_p3_16_locked_desktop_handling` | Detection of Windows workstation lock (`WM_WTSSESSION_CHANGE`) and safe pause | **PASS** |
-| `test_p3_17_open_source_licenses` | Comprehensive SPDX verification of MIT and Apache-2.0 dependencies | **PASS** |
-| `test_p3_18_no_regression_phase1_phase2` | Zero-regression verification across Phase 1 and Phase 2 pipelines | **PASS** |
+### Phases 1–4 Acceptance & Unit Tests (97 / 97 Passed)
+- **Phase 4 Acceptance**: 21 / 21 Passed
+- **Phase 3 Acceptance**: 18 / 18 Passed
+- **Phase 2 Acceptance**: 12 / 12 Passed
+- **Phase 1 Acceptance**: 9 / 9 Passed
+- **Workspace Unit Tests (All Crates)**: 37 / 37 Passed
 
-### Phase 2 Acceptance Tests (12 / 12 Passed)
-All 12 Phase 2 coding agent acceptance tests pass cleanly.
-
-### Phase 1 Acceptance Tests (9 / 9 Passed)
-All 9 Phase 1 acceptance tests pass cleanly with zero regressions.
+**Total: 121 / 121 Passed (100% Pass Rate). Zero Regressions.**
 
 ---
 
@@ -204,4 +178,5 @@ This project strictly adheres to open-source licensing principles:
 - **Windows-MCP**: Copyright (c) 2024-2026 Jeomon George (CursorTouch) under the MIT License.
 - **OpenCode**: Copyright (c) 2025 opencode under the MIT License. Architectural reference for exact-match mutation, patch rollback, and session compaction.
 - **Tauri 2**: The Tauri Programme within The Commons Conservancy under MIT / Apache-2.0.
+- **Zip-rs**: Copyright (c) 2014 Mathijs van de Nes under the MIT License.
 - All third-party notices, license texts, and dependency inventories are maintained in [THIRD_PARTY_NOTICES.md](file:///THIRD_PARTY_NOTICES.md) and [docs/OPEN_SOURCE_INVENTORY.md](file:///docs/OPEN_SOURCE_INVENTORY.md).

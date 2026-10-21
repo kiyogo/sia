@@ -10,6 +10,9 @@ use uuid::Uuid;
 pub mod workflow_store;
 pub use workflow_store::*;
 
+pub mod business_store;
+pub use business_store::*;
+
 #[derive(Error, Debug)]
 pub enum StorageError {
     #[error("Database error: {0}")]
@@ -313,6 +316,85 @@ impl Database {
                 FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS research_sources (
+                id TEXT PRIMARY KEY,
+                url_or_path TEXT NOT NULL,
+                title TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                retrieved_at TEXT NOT NULL,
+                published_date TEXT,
+                content_hash TEXT NOT NULL,
+                verification_status TEXT NOT NULL,
+                raw_snippet TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS evidence_items (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                task_id TEXT,
+                claim_text TEXT NOT NULL,
+                evidence_type TEXT NOT NULL,
+                page_or_section TEXT,
+                confidence_score REAL NOT NULL DEFAULT 1.0,
+                verification_status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(source_id) REFERENCES research_sources(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS document_metadata (
+                id TEXT PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                format TEXT NOT NULL,
+                file_size_bytes INTEGER NOT NULL,
+                title TEXT,
+                page_count INTEGER,
+                word_count INTEGER,
+                table_count INTEGER,
+                content_hash TEXT NOT NULL,
+                parsed_summary TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS business_connectors (
+                id TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                auth_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                scopes_json TEXT NOT NULL DEFAULT '[]',
+                rate_limit_per_minute INTEGER NOT NULL DEFAULT 60,
+                last_connected_at TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS email_drafts (
+                id TEXT PRIMARY KEY,
+                connector_id TEXT NOT NULL,
+                thread_id TEXT,
+                to_recipients_json TEXT NOT NULL DEFAULT '[]',
+                cc_recipients_json TEXT NOT NULL DEFAULT '[]',
+                bcc_recipients_json TEXT NOT NULL DEFAULT '[]',
+                subject TEXT NOT NULL,
+                body TEXT NOT NULL,
+                status TEXT NOT NULL,
+                operation_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS business_approvals (
+                id TEXT PRIMARY KEY,
+                workflow_id TEXT,
+                task_id TEXT,
+                action_type TEXT NOT NULL,
+                target_resource TEXT NOT NULL,
+                payload_preview TEXT NOT NULL,
+                status TEXT NOT NULL,
+                approved_by TEXT,
+                decision_reason TEXT,
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON checkpoints(task_id);
@@ -321,6 +403,9 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
             CREATE INDEX IF NOT EXISTS idx_artifacts_workflow ON shared_artifacts(workflow_id);
             CREATE INDEX IF NOT EXISTS idx_agent_msgs_workflow ON agent_messages(workflow_id);
+            CREATE INDEX IF NOT EXISTS idx_evidence_source ON evidence_items(source_id);
+            CREATE INDEX IF NOT EXISTS idx_email_drafts_op ON email_drafts(operation_id);
+            CREATE INDEX IF NOT EXISTS idx_approvals_status ON business_approvals(status);
             "#,
         )?;
         Ok(())
@@ -791,5 +876,135 @@ mod tests {
 
         // Release lease
         db.release_resource_lease("desktop:primary", 1).await.expect("release lease");
+    }
+
+    #[tokio::test]
+    async fn test_business_and_research_storage() {
+        let db = Database::open_in_memory().expect("open in-memory db");
+
+        // 1. Research Source
+        let source_id = Uuid::new_v4();
+        let source = ResearchSource {
+            id: source_id,
+            url_or_path: "https://example.com/market-report".to_string(),
+            title: "Q3 AI Market Analysis".to_string(),
+            source_type: SourceType::Web,
+            retrieved_at: Utc::now(),
+            published_date: Some("2026-10-01".to_string()),
+            content_hash: "hash_abc123".to_string(),
+            verification_status: VerificationStatus::Verified,
+            raw_snippet: Some("The AI market is projected to reach $1.3T by 2030.".to_string()),
+        };
+        db.create_research_source(&source).await.expect("create source");
+
+        let fetched_source = db.get_research_source(source_id).await.expect("get source");
+        assert_eq!(fetched_source.title, "Q3 AI Market Analysis");
+        assert_eq!(fetched_source.verification_status, VerificationStatus::Verified);
+
+        // 2. Evidence Item
+        let evidence_id = Uuid::new_v4();
+        let evidence = EvidenceItem {
+            id: evidence_id,
+            source_id,
+            task_id: None,
+            claim_text: "AI market will reach $1.3T by 2030".to_string(),
+            evidence_type: EvidenceType::Fact,
+            page_or_section: Some("Executive Summary p.2".to_string()),
+            confidence_score: 0.95,
+            verification_status: VerificationStatus::Verified,
+            created_at: Utc::now(),
+        };
+        db.create_evidence_item(&evidence).await.expect("create evidence");
+
+        let evidence_list = db.list_evidence_for_source(source_id).await.expect("list evidence");
+        assert_eq!(evidence_list.len(), 1);
+        assert_eq!(evidence_list[0].evidence_type, EvidenceType::Fact);
+
+        // 3. Document Metadata
+        let doc_id = Uuid::new_v4();
+        let doc = DocumentMetadata {
+            id: doc_id,
+            file_path: "reports/q3_report.pdf".to_string(),
+            format: "PDF".to_string(),
+            file_size_bytes: 1048576,
+            title: Some("Q3 AI Market Analysis".to_string()),
+            page_count: Some(15),
+            word_count: Some(4500),
+            table_count: Some(3),
+            content_hash: "hash_doc_pdf".to_string(),
+            parsed_summary: Some("Market research findings".to_string()),
+            created_at: Utc::now(),
+        };
+        db.create_document_metadata(&doc).await.expect("create doc");
+        let docs = db.list_documents().await.expect("list docs");
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].page_count, Some(15));
+
+        // 4. Business Connector
+        let conn_id = Uuid::new_v4();
+        let connector = BusinessConnector {
+            id: conn_id,
+            provider: "Gmail".to_string(),
+            auth_type: "OAuth2".to_string(),
+            status: ConnectorStatus::Connected,
+            scopes: vec!["https://www.googleapis.com/auth/gmail.readonly".to_string()],
+            rate_limit_per_minute: 120,
+            last_connected_at: Some(Utc::now()),
+            created_at: Utc::now(),
+        };
+        db.upsert_business_connector(&connector).await.expect("upsert connector");
+        let connectors = db.list_business_connectors().await.expect("list connectors");
+        assert_eq!(connectors.len(), 1);
+        assert_eq!(connectors[0].provider, "Gmail");
+
+        // 5. Email Draft with Operation ID & Idempotency
+        let draft_id = Uuid::new_v4();
+        let op_id = "op_send_email_998877";
+        let draft = EmailDraft {
+            id: draft_id,
+            connector_id: conn_id,
+            thread_id: None,
+            to_recipients: vec!["stakeholder@company.com".to_string()],
+            cc_recipients: vec![],
+            bcc_recipients: vec![],
+            subject: "Market Research Report Attached".to_string(),
+            body: "Please find attached the Q3 market research findings.".to_string(),
+            status: DraftStatus::Draft,
+            operation_id: op_id.to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        db.create_email_draft(&draft).await.expect("create draft");
+
+        let fetched_draft = db.get_email_draft_by_operation_id(op_id).await.expect("fetch draft");
+        assert!(fetched_draft.is_some());
+        assert_eq!(fetched_draft.unwrap().subject, "Market Research Report Attached");
+
+        // 6. Business Approval
+        let approval_id = Uuid::new_v4();
+        let approval = BusinessApproval {
+            id: approval_id,
+            workflow_id: None,
+            task_id: None,
+            action_type: "SendEmail".to_string(),
+            target_resource: "stakeholder@company.com".to_string(),
+            payload_preview: "Subject: Market Research Report Attached".to_string(),
+            status: ApprovalStatus::Pending,
+            approved_by: None,
+            decision_reason: None,
+            created_at: Utc::now(),
+            resolved_at: None,
+        };
+        db.create_business_approval(&approval).await.expect("create approval");
+        let pending = db.list_pending_approvals().await.expect("list pending approvals");
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].action_type, "SendEmail");
+
+        // Resolve approval
+        db.resolve_business_approval(approval_id, ApprovalStatus::Approved, "Admin", Some("Verified valid content"))
+            .await
+            .expect("resolve approval");
+        let remaining_pending = db.list_pending_approvals().await.expect("list remaining");
+        assert_eq!(remaining_pending.len(), 0);
     }
 }
