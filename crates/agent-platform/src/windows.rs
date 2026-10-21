@@ -9,6 +9,26 @@ use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[allow(dead_code)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+pub fn hidden_tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+pub fn hidden_std_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 pub struct WindowsOperatingSystemAdapter;
 
 impl WindowsOperatingSystemAdapter {
@@ -22,6 +42,10 @@ impl Default for WindowsOperatingSystemAdapter {
         Self::new()
     }
 }
+
+use std::sync::Mutex;
+
+static CACHED_PREREQS: Mutex<Option<(Instant, Vec<PrerequisiteStatus>)>> = Mutex::new(None);
 
 #[async_trait]
 impl OperatingSystemAdapter for WindowsOperatingSystemAdapter {
@@ -45,6 +69,14 @@ impl OperatingSystemAdapter for WindowsOperatingSystemAdapter {
     }
 
     async fn check_prerequisites(&self) -> Vec<PrerequisiteStatus> {
+        if let Ok(guard) = CACHED_PREREQS.lock() {
+            if let Some((time, ref list)) = *guard {
+                if time.elapsed().as_secs() < 60 {
+                    return list.clone();
+                }
+            }
+        }
+
         let mut results = Vec::new();
 
         // 1. Check Python >= 3.14 (required by Windows-MCP)
@@ -73,6 +105,10 @@ impl OperatingSystemAdapter for WindowsOperatingSystemAdapter {
         .await;
         results.push(git_check);
 
+        if let Ok(mut guard) = CACHED_PREREQS.lock() {
+            *guard = Some((Instant::now(), results.clone()));
+        }
+
         results
     }
 }
@@ -86,7 +122,7 @@ async fn check_python_314() -> PrerequisiteStatus {
     ];
 
     for (cmd, args) in commands_to_try {
-        if let Ok(output) = Command::new(cmd).args(&args).output().await {
+        if let Ok(output) = hidden_tokio_command(cmd).args(&args).output().await {
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout).to_string()
                     + &String::from_utf8_lossy(&output.stderr);
@@ -119,7 +155,7 @@ async fn check_command(
     required_version: &str,
     hint: &str,
 ) -> PrerequisiteStatus {
-    match Command::new(cmd).args(args).output().await {
+    match hidden_tokio_command(cmd).args(args).output().await {
         Ok(out) if out.status.success() => {
             let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
             PrerequisiteStatus {
@@ -182,12 +218,12 @@ impl ShellExecutor for WindowsShellExecutor {
 
         let mut cmd = match shell {
             ShellType::Cmd => {
-                let mut c = Command::new("cmd.exe");
+                let mut c = hidden_tokio_command("cmd.exe");
                 c.args(["/d", "/c", command]);
                 c
             }
             ShellType::PowerShell => {
-                let mut c = Command::new("powershell.exe");
+                let mut c = hidden_tokio_command("powershell.exe");
                 c.args([
                     "-NoProfile",
                     "-NonInteractive",
@@ -200,7 +236,7 @@ impl ShellExecutor for WindowsShellExecutor {
             }
             ShellType::Bash | ShellType::Sh => {
                 // If git bash or wsl bash is on path, execute bash -c
-                let mut c = Command::new("bash.exe");
+                let mut c = hidden_tokio_command("bash.exe");
                 c.args(["-c", command]);
                 c
             }
@@ -362,7 +398,7 @@ impl crate::traits::ComputerControlAdapter for WindowsComputerControlAdapter {
     }
 
     async fn get_lock_status(&self) -> PlatformResult<crate::traits::DesktopLockStatus> {
-        let output = Command::new("powershell.exe")
+        let output = hidden_tokio_command("powershell.exe")
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -382,7 +418,7 @@ impl crate::traits::ComputerControlAdapter for WindowsComputerControlAdapter {
     }
 
     async fn list_windows(&self) -> PlatformResult<Vec<crate::traits::WindowInfo>> {
-        let output = Command::new("powershell.exe")
+        let output = hidden_tokio_command("powershell.exe")
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -445,7 +481,7 @@ impl crate::traits::ComputerControlAdapter for WindowsComputerControlAdapter {
             escaped_title
         );
 
-        let output = Command::new("powershell.exe")
+        let output = hidden_tokio_command("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
             .await
@@ -483,7 +519,7 @@ $graphics.Dispose();
 $bmp.Dispose();
 [Convert]::ToBase64String($ms.ToArray())
 "#;
-        let output = Command::new("powershell.exe")
+        let output = hidden_tokio_command("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .output()
             .await

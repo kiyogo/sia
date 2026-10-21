@@ -24,8 +24,15 @@ impl BrowserMcpManager {
     }
 
     pub async fn check_prerequisites(&self) -> (bool, String) {
-        let node_check = Command::new("node").arg("--version").output().await;
-        let npx_check = Command::new("npx.cmd").arg("--version").output().await;
+        let mut node_cmd = Command::new("node");
+        #[cfg(windows)]
+        node_cmd.creation_flags(0x08000000);
+        let node_check = node_cmd.arg("--version").output().await;
+
+        let mut npx_cmd = Command::new("npx.cmd");
+        #[cfg(windows)]
+        npx_cmd.creation_flags(0x08000000);
+        let npx_check = npx_cmd.arg("--version").output().await;
 
         match (node_check, npx_check) {
             (Ok(n), _) if n.status.success() => {

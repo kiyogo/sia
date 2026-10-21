@@ -5,19 +5,20 @@
   "identifier": "com.aai.workspace",
   "build": {
     "frontendDist": "../dist",
-    "beforeDevCommand": "pnpm run build",
     "beforeBuildCommand": "pnpm run build"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Universal Autonomous AI Workspace",
         "width": 1280,
         "height": 820,
         "minWidth": 900,
         "minHeight": 600,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "visible": true
       }
     ],
     "security": {

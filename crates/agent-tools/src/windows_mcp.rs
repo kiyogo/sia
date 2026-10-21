@@ -12,6 +12,7 @@ pub struct WindowsMcpManager {
     client: Arc<RwLock<Option<McpClient>>>,
     security: SharedSecurityEngine,
     os_adapter: WindowsOperatingSystemAdapter,
+    cached_prereq: Arc<RwLock<Option<(Instant, (bool, String))>>>,
 }
 
 impl WindowsMcpManager {
@@ -20,10 +21,20 @@ impl WindowsMcpManager {
             client: Arc::new(RwLock::new(None)),
             security,
             os_adapter: WindowsOperatingSystemAdapter::new(),
+            cached_prereq: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn check_prerequisites(&self) -> (bool, String) {
+        {
+            let cache = self.cached_prereq.read().await;
+            if let Some((time, res)) = cache.as_ref() {
+                if time.elapsed().as_secs() < 60 {
+                    return res.clone();
+                }
+            }
+        }
+
         let statuses = self.os_adapter.check_prerequisites().await;
         let mut missing = Vec::new();
 
@@ -33,7 +44,7 @@ impl WindowsMcpManager {
             }
         }
 
-        if missing.is_empty() {
+        let result = if missing.is_empty() {
             (true, "All prerequisites (Python 3.14+, uv) are satisfied.".to_string())
         } else {
             (
@@ -43,7 +54,11 @@ impl WindowsMcpManager {
                     missing.join("\n")
                 ),
             )
-        }
+        };
+
+        let mut cache = self.cached_prereq.write().await;
+        *cache = Some((Instant::now(), result.clone()));
+        result
     }
 
     pub async fn is_connected(&self) -> bool {

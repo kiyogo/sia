@@ -147,8 +147,11 @@ fn is_pid_alive(pid: u32) -> bool {
     #[cfg(windows)]
     {
         use std::process::Command;
-        let out = Command::new("powershell.exe")
-            .args(["-NoProfile", "-Command", &format!("if (Get-Process -Id {} -ErrorAction SilentlyContinue) {{ 'ALIVE' }}", pid)])
+        use std::os::windows::process::CommandExt;
+        let mut cmd = Command::new("powershell.exe");
+        cmd.creation_flags(0x08000000);
+        let out = cmd
+            .args(["-NoProfile", "-NonInteractive", "-Command", &format!("if (Get-Process -Id {} -ErrorAction SilentlyContinue) {{ 'ALIVE' }}", pid)])
             .output();
         if let Ok(res) = out {
             String::from_utf8_lossy(&res.stdout).contains("ALIVE")
@@ -167,7 +170,10 @@ pub fn kill_pid_tree(pid: u32) -> bool {
     #[cfg(windows)]
     {
         use std::process::Command;
-        let _ = Command::new("taskkill.exe")
+        use std::os::windows::process::CommandExt;
+        let mut cmd = Command::new("taskkill.exe");
+        cmd.creation_flags(0x08000000);
+        let _ = cmd
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output();
         true

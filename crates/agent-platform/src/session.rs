@@ -44,7 +44,13 @@ impl InteractiveSessionProvider for WindowsSessionProvider {
 
             // Check if workstation is locked via logonui check
             let is_locked = {
-                let output = std::process::Command::new("powershell.exe")
+                let mut cmd = std::process::Command::new("powershell.exe");
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    cmd.creation_flags(0x08000000);
+                }
+                let output = cmd
                     .args([
                         "-NoProfile",
                         "-NonInteractive",

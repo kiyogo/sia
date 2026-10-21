@@ -1,5 +1,5 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Prevents additional console window on Windows, DO NOT REMOVE!!
+#![windows_subsystem = "windows"]
 
 use agent_platform::{
     ComputerControlAdapter, OperatingSystemAdapter, ProcessOutput, RuntimeServiceAdapter,
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 use tracing::info;
 use uuid::Uuid;
 
@@ -754,14 +754,20 @@ unsafe fn ensure_single_instance_or_focus(debug_mode: bool) -> bool {
         if !hwnd.is_null() {
             ShowWindow(hwnd, 9); // SW_RESTORE
             SetForegroundWindow(hwnd);
+            return false;
         }
-        return false;
+        // If window is null, previous process may have died or is headless; allow launch.
     }
     true
 }
 
 #[tokio::main]
 async fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        let panic_path = std::env::temp_dir().join("aai_desktop_panic.log");
+        let _ = std::fs::write(&panic_path, format!("PANIC: {:?}", info));
+    }));
+
     tracing_subscriber::fmt::init();
     info!("Initializing Universal Autonomous AI Workspace Host");
 
@@ -808,6 +814,24 @@ async fn main() {
     tauri::Builder::default()
         .manage(AppState { host })
         .setup(move |app| {
+            if let Some(window) = app.get_webview_window("main") {
+                #[cfg(debug_assertions)]
+                {
+                    use std::net::{SocketAddr, TcpStream};
+                    use std::time::Duration;
+                    if let Ok(addr) = "127.0.0.1:1420".parse::<SocketAddr>() {
+                        if TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok() {
+                            if let Ok(url) = tauri::Url::parse("http://localhost:1420") {
+                                let _ = window.navigate(url);
+                            }
+                        }
+                    }
+                }
+
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+
             let handle = app.handle().clone();
             let mut event_rx = host_for_events.subscribe_events();
 

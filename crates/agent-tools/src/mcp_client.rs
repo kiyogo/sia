@@ -26,6 +26,8 @@ pub struct McpClient {
 impl McpClient {
     pub async fn spawn(command: &str, args: &[&str], envs: &[(String, String)]) -> ToolResult<Self> {
         let mut cmd = Command::new(command);
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
         cmd.args(args);
         cmd.envs(envs.iter().cloned());
         cmd.stdin(Stdio::piped());
