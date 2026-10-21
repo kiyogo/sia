@@ -57,7 +57,40 @@ impl Tool for FileReadTool {
         let workspace = self.security.get_workspace_root().await;
         let resolved = resolve_path(&workspace, path_str);
 
-        self.security.check_permission(PermissionTier::ReadOnly, &format!("Read file {}", resolved.display()), Some(&resolved), params.clone()).await?;
+        self.security.check_permission(PermissionTier::ReadOnly, &format!("Read {}", resolved.display()), Some(&resolved), params.clone()).await?;
+
+        // OpenCode behavior: if path is a directory, list its contents with pagination
+        if resolved.is_dir() {
+            let mut entries = Vec::new();
+            if let Ok(rd) = fs::read_dir(&resolved) {
+                for item in rd.filter_map(|e| e.ok()) {
+                    let name = item.file_name().to_string_lossy().to_string();
+                    let is_d = item.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                    let size = item.metadata().map(|m| m.len()).unwrap_or(0);
+                    entries.push(format!("{} {} ({} bytes)", if is_d { "[DIR] " } else { "[FILE]" }, name, size));
+                }
+            }
+            entries.sort();
+            let total_entries = entries.len();
+            let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(1).max(1) as usize - 1;
+            let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(500) as usize;
+            let end = (offset + limit).min(total_entries);
+            let selected = if offset < total_entries { &entries[offset..end] } else { &[] };
+
+            let mut output = format!("[Directory entries {}-{} of {} from {}]\n", offset + 1, end, total_entries, resolved.display());
+            output.push_str(&selected.join("\n"));
+
+            return Ok(ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "file_read".to_string(),
+                stdout: output,
+                stderr: String::new(),
+                exit_code: Some(0),
+                duration_ms: start.elapsed().as_millis() as u64,
+                is_error: false,
+                truncated: end < total_entries,
+            });
+        }
 
         let content = fs::read_to_string(&resolved).map_err(|e| ToolError::ExecutionFailed(format!("Failed to read {}: {e}", resolved.display())))?;
         let lines: Vec<&str> = content.lines().collect();

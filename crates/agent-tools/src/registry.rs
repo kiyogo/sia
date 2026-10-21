@@ -4,6 +4,7 @@ use crate::code_intelligence::{CodeSearchTool, FileOutlineTool, ProjectDetectToo
 use crate::filesystem::{FileListTool, FilePatchTool, FileReadTool, FileSearchTool, FileWriteTool};
 use crate::git::{GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool};
 use crate::terminal::TerminalTool;
+use crate::todo::TodoWriteTool;
 use crate::types::{Tool, ToolDefinition, ToolError, ToolExecutionResult, ToolResult};
 use agent_platform::ShellExecutor;
 use agent_security::SharedSecurityEngine;
@@ -30,7 +31,25 @@ impl ToolRegistry {
 
     pub async fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
         let map = self.tools.read().await;
-        map.get(name).cloned()
+        if let Some(t) = map.get(name) {
+            return Some(t.clone());
+        }
+        // OpenCode native tool alias resolution
+        let alias = match name.to_lowercase().as_str() {
+            "read" => Some("file_read"),
+            "write" => Some("file_write"),
+            "edit" => Some("code_edit"),
+            "patch" => Some("code_patch"),
+            "glob" => Some("file_list"),
+            "grep" => Some("code_search"),
+            "shell" => Some("terminal_execute"),
+            "todo" | "todowrite" => Some("todowrite"),
+            _ => None,
+        };
+        if let Some(target) = alias {
+            return map.get(target).cloned();
+        }
+        None
     }
 
     pub async fn list_definitions(&self) -> Vec<ToolDefinition> {
@@ -96,6 +115,9 @@ pub fn create_default_registry(
     let build_runner_tool = Arc::new(BuildRunnerTool::new(executor_arc.clone(), security.clone()));
     let test_runner_tool = Arc::new(TestRunnerTool::new(executor_arc.clone(), security.clone()));
 
+    // OpenCode Planning & Todo Tool
+    let todo_tool = Arc::new(TodoWriteTool::new(security.clone()));
+
     let mut map = HashMap::new();
     map.insert(terminal_tool.definition().name, terminal_tool as Arc<dyn Tool>);
     map.insert(file_read_tool.definition().name, file_read_tool as Arc<dyn Tool>);
@@ -120,6 +142,7 @@ pub fn create_default_registry(
 
     map.insert(build_runner_tool.definition().name, build_runner_tool as Arc<dyn Tool>);
     map.insert(test_runner_tool.definition().name, test_runner_tool as Arc<dyn Tool>);
+    map.insert(todo_tool.definition().name, todo_tool as Arc<dyn Tool>);
 
     ToolRegistry {
         tools: RwLock::new(map),

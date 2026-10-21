@@ -84,14 +84,18 @@ impl Tool for CodeEditTool {
             .ok_or_else(|| ToolError::InvalidParameters("path is required".to_string()))?;
         let old_str = arguments
             .get("old_string")
+            .or_else(|| arguments.get("oldString"))
             .and_then(|s| s.as_str())
-            .ok_or_else(|| ToolError::InvalidParameters("old_string is required".to_string()))?;
+            .ok_or_else(|| ToolError::InvalidParameters("old_string (or oldString) is required".to_string()))?;
         let new_str = arguments
             .get("new_string")
+            .or_else(|| arguments.get("newString"))
+            .or_else(|| arguments.get("new_content"))
             .and_then(|s| s.as_str())
-            .ok_or_else(|| ToolError::InvalidParameters("new_string is required".to_string()))?;
+            .ok_or_else(|| ToolError::InvalidParameters("new_string (or newString) is required".to_string()))?;
         let replace_all = arguments
             .get("replace_all")
+            .or_else(|| arguments.get("replaceAll"))
             .and_then(|r| r.as_bool())
             .unwrap_or(false);
 

@@ -7,6 +7,7 @@ pub mod git;
 pub mod mcp_client;
 pub mod registry;
 pub mod terminal;
+pub mod todo;
 pub mod types;
 pub mod windows_mcp;
 
@@ -19,6 +20,7 @@ pub use git::{GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool};
 pub use mcp_client::{McpClient, McpToolInfo};
 pub use registry::{create_default_registry, SharedToolRegistry, ToolRegistry};
 pub use terminal::TerminalTool;
+pub use todo::{TodoItem, TodoWriteTool};
 pub use types::{Tool, ToolDefinition, ToolError, ToolExecutionResult, ToolResult};
 pub use windows_mcp::{DynamicMcpTool, WindowsMcpManager};
 
@@ -204,5 +206,63 @@ mod tests {
         // Verify a.txt was NOT modified due to validation or was rolled back
         let content_a = std::fs::read_to_string(root.join("a.txt")).expect("read a");
         assert_eq!(content_a, "Original A\n");
+    }
+
+    #[tokio::test]
+    async fn test_opencode_todowrite_and_alias_resolution() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().to_path_buf();
+        let fs = Box::new(WindowsFileSystemProvider::new());
+        let sec = Arc::new(SecurityEngine::new(root.clone(), PermissionMode::FullAuto, fs));
+        let executor = Box::new(WindowsShellExecutor::new());
+        let registry = create_default_registry(executor, sec);
+
+        // 1. OpenCode todowrite execution
+        let res = registry
+            .execute(
+                "todowrite",
+                "call_todo_1",
+                json!({
+                    "todos": [
+                        { "content": "Inspect architecture", "status": "completed" },
+                        { "content": "Port OpenCode algorithms to Rust", "status": "in_progress" },
+                        { "content": "Run tests and verify", "status": "pending" }
+                    ]
+                }),
+            )
+            .await
+            .expect("todowrite should succeed");
+
+        assert!(res.stdout.contains("1/3 completed"));
+        assert!(res.stdout.contains("1 in progress"));
+        assert!(res.stdout.contains("Port OpenCode algorithms to Rust"));
+
+        // 2. OpenCode alias resolution: 'read' should resolve to FileReadTool
+        std::fs::write(root.join("hello.txt"), "Line 1\nLine 2\n").expect("write");
+        let read_res = registry
+            .execute(
+                "read",
+                "call_read_alias",
+                json!({ "path": "hello.txt" }),
+            )
+            .await
+            .expect("read alias should resolve");
+        assert!(read_res.stdout.contains("Line 1"));
+
+        // 3. OpenCode alias resolution: 'edit' with oldString / newString should resolve to CodeEditTool
+        let edit_res = registry
+            .execute(
+                "edit",
+                "call_edit_alias",
+                json!({
+                    "path": "hello.txt",
+                    "oldString": "Line 2",
+                    "newString": "Line Two"
+                }),
+            )
+            .await
+            .expect("edit alias should resolve and apply");
+        assert!(edit_res.stdout.contains("hello.txt"));
+        assert!(edit_res.stdout.contains("replacements"));
     }
 }

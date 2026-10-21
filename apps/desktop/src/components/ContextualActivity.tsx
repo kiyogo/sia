@@ -10,6 +10,8 @@ import {
   ChevronDown,
   ChevronRight,
   Code2,
+  ListTodo,
+  Search,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -44,7 +46,27 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
   const { actionVerb, targetText, icon } = React.useMemo(() => {
     const name = activity.toolName.toLowerCase();
 
-    if (name.includes('terminal') || name.includes('bash') || name.includes('cmd') || name.includes('powershell')) {
+    if (name.includes('todo')) {
+      const todos = parsedArgs?.todos || [];
+      const completed = Array.isArray(todos) ? todos.filter((t: any) => t.status === 'completed').length : 0;
+      const total = Array.isArray(todos) ? todos.length : 0;
+      return {
+        actionVerb: 'Planned',
+        targetText: total > 0 ? `todos (${completed}/${total} done)` : 'working plan',
+        icon: <ListTodo className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name.includes('glob') || name.includes('grep') || name.includes('search')) {
+      const pattern = parsedArgs?.pattern || '';
+      return {
+        actionVerb: 'Searched',
+        targetText: pattern ? `pattern "${pattern}"` : 'codebase',
+        icon: <Search className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name.includes('terminal') || name.includes('shell') || name.includes('bash') || name.includes('cmd') || name.includes('powershell')) {
       const cmd = parsedArgs?.command || (typeof parsedArgs === 'string' ? parsedArgs : '');
       return {
         actionVerb: 'Ran',

@@ -307,17 +307,14 @@ impl SecurityEngine {
                 if tier == PermissionTier::ReadOnly {
                     // Allow read-only inspection outside default workspace
                 } else {
-                    let mode = *self.mode.read().await;
-                    if mode != PermissionMode::FullAuto {
-                        // Modifying files outside configured workspace in non-FullAuto mode requires approval
-                        return self
-                            .request_approval(
-                                PermissionTier::DestructiveAction,
-                                &format!("Access outside workspace: {}", p.display()),
-                                details,
-                            )
-                            .await;
-                    }
+                    // Modifying files or directory traversal outside workspace boundary requires Approval
+                    return self
+                        .request_approval(
+                            PermissionTier::DestructiveAction,
+                            &format!("Access outside workspace: {}", p.display()),
+                            details,
+                        )
+                        .await;
                 }
             }
         }
