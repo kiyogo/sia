@@ -466,9 +466,27 @@ impl RuntimeHost {
 
         // Spawn agent loop task
         tokio::spawn(async move {
-            let workspace = cfg.workspace_path.clone();
+            let mut target_dir = cfg.workspace_path.clone();
+
+            // Scan user prompt for an explicit Windows path (e.g. "E:\DATA\source\Nas\LocalDrive" or "D:\...")
+            for word in user_prompt_owned.split_whitespace() {
+                let clean = word.trim_matches(|c| c == '\'' || c == '"' || c == '`' || c == '<' || c == '>' || c == '(' || c == ')' || c == ',');
+                let candidate = PathBuf::from(clean);
+                if candidate.is_absolute() && candidate.exists() {
+                    if candidate.is_dir() {
+                        target_dir = candidate;
+                        break;
+                    } else if let Some(parent) = candidate.parent() {
+                        if parent.exists() && parent.is_dir() {
+                            target_dir = parent.to_path_buf();
+                            break;
+                        }
+                    }
+                }
+            }
+
             let adapter = MultiLanguageAdapter::new();
-            let info = adapter.detect_project(&workspace);
+            let info = adapter.detect_project(&target_dir);
 
             let lang = info
                 .as_ref()
@@ -492,17 +510,22 @@ impl RuntimeHost {
 Your objective is to fulfill the user's instructions completely, accurately, and autonomously.
 
 <env>
-  Active Workspace: {}
+  Active Project / Workspace: {}
   Detected Language / Tech: {}
   Build System: {}
   Test Runner: {}
   Git Branch: {}
 </env>
 
+# System-Wide Local Access & Guidelines:
+- You have native tool permissions to inspect, read, search, and analyze files and directories across ALL local Windows drives (C:\, D:\, E:\, etc.).
+- When the user asks about or references any local path (e.g. `E:\DATA\source\Nas\LocalDrive`), you have full access to inspect it using tools like `file_list`, `project_detect`, `file_read`, and `code_search` with that path.
+- NEVER refuse by claiming a path is outside your workspace. You must proactively explore the files (such as README.md, package.json, go.mod, Cargo.toml, project files) and answer the user thoroughly.
+
 # Engineering & Automation Workflow:
 1. EXPLORATION & DISCOVERY:
-   - When asked to inspect, analyze, or modify code, use `file_list` or `file_search` to discover project assets.
-   - Use `file_read` to inspect relevant files before making edits. Include line numbers when reading.
+   - When asked to inspect, analyze, or identify a project or code, immediately call `project_detect` or `file_list` on the requested directory.
+   - Use `file_read` to inspect relevant files (e.g., README.md, manifest files, source code).
    - For code structure, prefer `repo_map` or `file_outline` to conserve tokens.
 
 2. IMPLEMENTATION & MUTATION:
@@ -518,7 +541,7 @@ Your objective is to fulfill the user's instructions completely, accurately, and
    - Express deep technical reasoning, architecture choices, visual language, or component breakdowns in your thoughts.
    - Respond in the language used by the user (Vietnamese if requested in Vietnamese, English if in English).
    - Be direct, professional, and concise. Avoid fluff or generic disclaimers."#,
-                workspace.display(),
+                target_dir.display(),
                 lang,
                 build_cmd,
                 test_cmd,

@@ -302,14 +302,23 @@ impl SecurityEngine {
         if let Some(p) = path {
             let root = self.workspace_root.read().await;
             if !self.fs_provider.is_within_boundary(&root, p) {
-                // Modifying outside workspace is considered DestructiveAction or requires Approval
-                return self
-                    .request_approval(
-                        PermissionTier::DestructiveAction,
-                        &format!("Access outside workspace: {}", p.display()),
-                        details,
-                    )
-                    .await;
+                // Read-only operations (file_read, file_list, project_detect, code_search, repo_map)
+                // are completely non-destructive and allowed anywhere across local drives.
+                if tier == PermissionTier::ReadOnly {
+                    // Allow read-only inspection outside default workspace
+                } else {
+                    let mode = *self.mode.read().await;
+                    if mode != PermissionMode::FullAuto {
+                        // Modifying files outside configured workspace in non-FullAuto mode requires approval
+                        return self
+                            .request_approval(
+                                PermissionTier::DestructiveAction,
+                                &format!("Access outside workspace: {}", p.display()),
+                                details,
+                            )
+                            .await;
+                    }
+                }
             }
         }
 
@@ -418,6 +427,18 @@ mod tests {
         // ReadOnly passes in Strict
         assert!(sec
             .check_permission(PermissionTier::ReadOnly, "read file", None, serde_json::json!({}))
+            .await
+            .is_ok());
+
+        // ReadOnly outside workspace also passes without requiring interactive approval
+        let outside_path = PathBuf::from(r"E:\DATA\source\Nas\LocalDrive");
+        assert!(sec
+            .check_permission(
+                PermissionTier::ReadOnly,
+                "read outside directory",
+                Some(&outside_path),
+                serde_json::json!({})
+            )
             .await
             .is_ok());
 
