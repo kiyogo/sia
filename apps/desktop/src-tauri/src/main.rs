@@ -722,6 +722,44 @@ async fn backup_database_now(custom_path: Option<String>, state: State<'_, AppSt
     Ok(target.to_string_lossy().to_string())
 }
 
+#[cfg(windows)]
+unsafe fn ensure_single_instance_or_focus(debug_mode: bool) -> bool {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateMutexW(lpMutexAttributes: *const std::ffi::c_void, bInitialOwner: i32, lpName: *const u16) -> *mut std::ffi::c_void;
+        fn GetLastError() -> u32;
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn FindWindowW(lpClassName: *const u16, lpWindowName: *const u16) -> *mut std::ffi::c_void;
+        fn ShowWindow(hWnd: *mut std::ffi::c_void, nCmdShow: i32) -> i32;
+        fn SetForegroundWindow(hWnd: *mut std::ffi::c_void) -> i32;
+    }
+
+    use std::os::windows::ffi::OsStrExt;
+    let mutex_str = if debug_mode {
+        "Local\\AAI_Workspace_Debug_Mutex\0"
+    } else {
+        "Local\\AAI_Workspace_Release_Mutex\0"
+    };
+    let mutex_name: Vec<u16> = std::ffi::OsStr::new(mutex_str).encode_wide().collect();
+
+    let _handle = CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr());
+    const ERROR_ALREADY_EXISTS: u32 = 183;
+    if GetLastError() == ERROR_ALREADY_EXISTS {
+        let title: Vec<u16> = std::ffi::OsStr::new("Universal Autonomous AI Workspace\0")
+            .encode_wide()
+            .collect();
+        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+        if !hwnd.is_null() {
+            ShowWindow(hwnd, 9); // SW_RESTORE
+            SetForegroundWindow(hwnd);
+        }
+        return false;
+    }
+    true
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -732,6 +770,24 @@ async fn main() {
         .unwrap_or_else(std::env::temp_dir)
         .join("AutonomousAiWorkspace");
     let _ = std::fs::create_dir_all(&app_dir);
+
+    #[cfg(windows)]
+    {
+        let is_debug = cfg!(debug_assertions);
+        unsafe {
+            if !ensure_single_instance_or_focus(is_debug) {
+                eprintln!("Universal Autonomous AI Workspace is already running. Switched to existing window.");
+                return;
+            }
+        }
+
+        let profile = if is_debug { "webview_debug" } else { "webview_release" };
+        let webview_dir = app_dir.join(profile);
+        let _ = std::fs::create_dir_all(&webview_dir);
+        if std::env::var_os("WEBVIEW2_USER_DATA_FOLDER").is_none() {
+            std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_dir);
+        }
+    }
 
     let db_path = app_dir.join("workspace.db");
     let mut config = RuntimeConfig::default();
