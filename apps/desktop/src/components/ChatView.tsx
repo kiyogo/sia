@@ -48,6 +48,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isAutoScrollEnabled = useRef(true);
+  const activeConvRef = useRef(activeConversation);
+  const isGeneratingRef = useRef(isGenerating);
+
+  useEffect(() => {
+    activeConvRef.current = activeConversation;
+  }, [activeConversation]);
+
+  useEffect(() => {
+    isGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
 
   // Timer for thinking animation
   useEffect(() => {
@@ -86,7 +96,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
-  // Listen to runtime host agent-event stream
+  // Listen to runtime host agent-event stream (mounted once to avoid dropping events during transitions)
   useEffect(() => {
     let unlisten: (() => void) | null = null;
 
@@ -124,9 +134,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
         setLiveThinking(null);
         setIsGenerating(false);
         setErrorMessage(null);
+        const currentConvId = activeConvRef.current?.id || '';
         const asstMsg: Message = {
           id: String(Date.now()),
-          conversation_id: activeConversation?.id || '',
+          conversation_id: currentConvId,
           role: 'assistant',
           content: event.FinalAnswer.content,
           tool_calls: null,
@@ -140,16 +151,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
           }
           return [...prev, asstMsg];
         });
-        if (activeConversation) {
-          loadMessages(activeConversation.id);
+        if (currentConvId) {
+          loadMessages(currentConvId);
         }
       } else if ('Error' in event) {
         setLiveThinking(null);
         setIsGenerating(false);
         setErrorMessage(event.Error.message);
+        const currentConvId = activeConvRef.current?.id || '';
         const errMsg: Message = {
           id: String(Date.now()),
-          conversation_id: activeConversation?.id || '',
+          conversation_id: currentConvId,
           role: 'assistant',
           content: `⚠️ **Lỗi phản hồi từ AI**: ${event.Error.message}\n\n*Vui lòng mở Cài đặt (Settings) để kiểm tra lại Endpoint và API Key.*`,
           tool_calls: null,
@@ -159,9 +171,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
         };
         setMessages((prev) => [...prev, errMsg]);
       } else if ('TaskStatusChanged' in event) {
-        if (event.TaskStatusChanged.status === 'Cancelled' || event.TaskStatusChanged.status === 'Failed') {
+        if (
+          event.TaskStatusChanged.status === 'Completed' ||
+          event.TaskStatusChanged.status === 'Cancelled' ||
+          event.TaskStatusChanged.status === 'Failed'
+        ) {
           setIsGenerating(false);
           setLiveThinking(null);
+          const currentConvId = activeConvRef.current?.id;
+          if (currentConvId) {
+            loadMessages(currentConvId);
+          }
         }
       }
     }).then((fn) => {
@@ -171,7 +191,66 @@ export const ChatView: React.FC<ChatViewProps> = ({
     return () => {
       if (unlisten) unlisten();
     };
-  }, [activeConversation?.id]);
+  }, []);
+
+  // Polling watchdog: verifies database & task status while generating
+  // Prevents the UI from ever getting stuck in "Thinking for Xs" if a window event was missed
+  useEffect(() => {
+    if (!isGenerating) return;
+
+    const currentConvId = activeConversation?.id;
+    const targetTaskId = activeTaskId;
+
+    const watchdog = setInterval(async () => {
+      try {
+        if (currentConvId) {
+          const msgs = await invokeCommand<Message[]>('get_messages', { conversationId: currentConvId });
+          if (msgs && msgs.length > 0) {
+            const lastMsg = msgs[msgs.length - 1];
+            if (lastMsg.role === 'assistant') {
+              setMessages(msgs);
+              setIsGenerating(false);
+              setLiveThinking(null);
+              setErrorMessage(null);
+              return;
+            }
+          }
+        }
+
+        if (targetTaskId) {
+          const tasks = await invokeCommand<any[]>('list_tasks');
+          const runningTask = tasks.find((t: any) => t.id === targetTaskId);
+          if (runningTask) {
+            if (runningTask.status === 'Completed') {
+              if (currentConvId) {
+                const msgs = await invokeCommand<Message[]>('get_messages', { conversationId: currentConvId });
+                setMessages(msgs);
+              }
+              setIsGenerating(false);
+              setLiveThinking(null);
+              setErrorMessage(null);
+              return;
+            } else if (runningTask.status === 'Failed') {
+              setIsGenerating(false);
+              setLiveThinking(null);
+              setErrorMessage(runningTask.error || t('Tác vụ thất bại trong quá trình thực thi.', 'Task execution failed.'));
+              return;
+            } else if (runningTask.status === 'Cancelled') {
+              setIsGenerating(false);
+              setLiveThinking(null);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Watchdog check error:', err);
+      }
+    }, 1500);
+
+    return () => {
+      clearInterval(watchdog);
+    };
+  }, [isGenerating, activeConversation?.id, activeTaskId]);
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
