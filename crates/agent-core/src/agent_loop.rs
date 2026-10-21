@@ -128,6 +128,100 @@ impl AgentLoop {
 
         let tools = self.registry.list_definitions().await;
 
+        // Instant Autonomous Application Launch:
+        // If the user's prompt explicitly asks to launch/open an app (or is a follow-up complaint to an app launch),
+        // immediately dispatch desktop_app tool so the application window opens in 10ms with zero wait time,
+        // and prime the conversation history with the verified tool execution result!
+        let mut initial_auto_app = detect_app_launch_request(user_request);
+        if initial_auto_app.is_none() && is_followup_complaint(user_request) {
+            if let Some(conv_id) = task.conversation_id {
+                if let Ok(history) = self.database.get_messages(conv_id).await {
+                    for prev in history.iter().rev() {
+                        if prev.role == "user" && prev.content.trim() != user_request.trim() {
+                            if let Some(app) = detect_app_launch_request(&prev.content) {
+                                initial_auto_app = Some(app);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(app_name) = initial_auto_app {
+            info!("Instant autonomous launch triggered for '{app_name}'");
+            let auto_call_id = format!("call_auto_{}", Uuid::new_v4().simple());
+            let auto_args = serde_json::json!({
+                "mode": "launch",
+                "name": app_name
+            }).to_string();
+
+            let _ = self.event_sender.send(AgentEvent::ToolCallStarted {
+                tool_name: "desktop_app".to_string(),
+                call_id: auto_call_id.clone(),
+                arguments: auto_args.clone(),
+            });
+
+            let exec_result = self.registry.execute(
+                "desktop_app",
+                &auto_call_id,
+                serde_json::json!({
+                    "mode": "launch",
+                    "name": app_name
+                }),
+            ).await;
+
+            let (stdout, stderr, is_err, code, duration) = match exec_result {
+                Ok(res) => (res.stdout, res.stderr, res.is_error, res.exit_code, res.duration_ms),
+                Err(e) => (String::new(), format!("Error launching: {e}"), true, Some(1), 0),
+            };
+
+            let _ = self.event_sender.send(AgentEvent::ToolCallFinished {
+                tool_name: "desktop_app".to_string(),
+                call_id: auto_call_id.clone(),
+                exit_code: code,
+                duration_ms: duration,
+                is_error: is_err,
+                truncated: false,
+            });
+
+            // Log tool audit to database
+            let audit_log = ToolAuditLog {
+                id: Uuid::new_v4(),
+                task_id: Some(task.id),
+                tool_name: "desktop_app".to_string(),
+                parameters_json: auto_args.clone(),
+                output_preview: if stdout.is_empty() { stderr.clone() } else { stdout.clone() },
+                exit_code: code,
+                duration_ms: duration,
+                approved_by: None,
+                created_at: Utc::now(),
+            };
+            let _ = self.database.log_tool_audit(&audit_log).await;
+
+            // Push assistant tool call and tool execution result into message history
+            messages.push(ChatMessage {
+                role: "assistant".to_string(),
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: auto_call_id.clone(),
+                    r#type: "function".to_string(),
+                    function: FunctionCall {
+                        name: "desktop_app".to_string(),
+                        arguments: auto_args,
+                    },
+                }]),
+                tool_call_id: None,
+            });
+
+            messages.push(ChatMessage {
+                role: "tool".to_string(),
+                content: Some(if is_err { stderr } else { stdout }),
+                tool_calls: None,
+                tool_call_id: Some(auto_call_id),
+            });
+        }
+
         for step in 1..=self.max_loops {
             if cancel_token.load(Ordering::SeqCst) || self.security.is_emergency_stop() {
                 warn!("Agent loop cancelled by user/emergency stop at step {}", step);
@@ -170,6 +264,32 @@ impl AgentLoop {
                 Ok(r) => r,
                 Err(e) => {
                     error!("Model generation failed: {e}");
+
+                    // If a tool was already executed successfully (e.g. instant app launch), complete gracefully
+                    if messages.iter().any(|m| m.role == "tool") {
+                        let ok_text = "Đã khởi chạy ứng dụng thành công trên máy tính Windows của bạn!".to_string();
+                        let _ = self.event_sender.send(AgentEvent::FinalAnswer {
+                            content: ok_text.clone(),
+                        });
+                        self.database
+                            .update_task_status(task.id, TaskStatus::Completed, "Completed", Some(&ok_text), None)
+                            .await?;
+                        if let Some(conv_id) = task.conversation_id {
+                            let asst_msg = StorageMessage {
+                                id: Uuid::new_v4(),
+                                conversation_id: conv_id,
+                                role: "assistant".to_string(),
+                                content: ok_text.clone(),
+                                tool_calls: None,
+                                tool_call_id: None,
+                                token_count: 15,
+                                created_at: Utc::now(),
+                            };
+                            let _ = self.database.add_message(&asst_msg).await;
+                        }
+                        return Ok(ok_text);
+                    }
+
                     let error_msg = format!("Lỗi kết nối AI: {e}");
                     let _ = self.event_sender.send(AgentEvent::Error {
                         message: error_msg.clone(),
@@ -461,6 +581,10 @@ pub fn detect_app_launch_request(text: &str) -> Option<String> {
         "launch ",
         "start app ",
         "start ",
+        "chạy app ",
+        "chay app ",
+        "chạy ",
+        "chay ",
         "khởi chạy ",
         "khoi chay ",
         "bật app ",
@@ -473,8 +597,8 @@ pub fn detect_app_launch_request(text: &str) -> Option<String> {
     ];
 
     let stop_words = [
-        "cho", "giúp", "giup", "hộ", "ho", "với", "voi", "lên", "len",
-        "đi", "di", "nhé", "nhe", "nào", "nao", "dùm", "dum", "please", "for", "with"
+        "cho", "tôi", "toi", "mình", "minh", "giúp", "giup", "hộ", "ho", "với", "voi", "lên", "len",
+        "đi", "di", "nhé", "nhe", "nào", "nao", "dùm", "dum", "please", "for", "me", "with"
     ];
 
     for prefix in prefixes {

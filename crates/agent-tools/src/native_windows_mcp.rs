@@ -27,6 +27,18 @@ mod win32 {
         pub fn GetSystemMetrics(nIndex: i32) -> i32;
     }
 
+    #[link(name = "shell32")]
+    extern "system" {
+        pub fn ShellExecuteW(
+            hwnd: isize,
+            lpOperation: *const u16,
+            lpFile: *const u16,
+            lpParameters: *const u16,
+            lpDirectory: *const u16,
+            nShowCmd: i32,
+        ) -> isize;
+    }
+
     pub const MOUSEEVENTF_LEFTDOWN: u32 = 0x0002;
     pub const MOUSEEVENTF_LEFTUP: u32 = 0x0004;
     pub const MOUSEEVENTF_RIGHTDOWN: u32 = 0x0008;
@@ -140,6 +152,10 @@ pub fn resolve_windows_app(name: &str) -> Option<PathBuf> {
     search_dirs.push(PathBuf::from(r"C:\Program Files"));
     search_dirs.push(PathBuf::from(r"C:\Program Files (x86)"));
 
+    let mut exact_matches = Vec::new();
+    let mut prefix_matches = Vec::new();
+    let mut substring_matches = Vec::new();
+
     for dir in search_dirs {
         if !dir.exists() {
             continue;
@@ -152,13 +168,38 @@ pub fn resolve_windows_app(name: &str) -> Option<PathBuf> {
             if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
                 let f_lower = file_name.to_lowercase();
                 if f_lower.ends_with(".exe") || f_lower.ends_with(".lnk") {
+                    // Exclude uninstallers, updaters, crash handlers, setups, or helpers
+                    if f_lower.contains("unins")
+                        || f_lower.contains("setup")
+                        || f_lower.contains("update")
+                        || f_lower.contains("helper")
+                        || f_lower.contains("crash")
+                        || f_lower.contains("elevate")
+                    {
+                        continue;
+                    }
+
                     let stem = f_lower.trim_end_matches(".exe").trim_end_matches(".lnk");
-                    if stem == lower_stem || stem.starts_with(lower_stem) || stem.contains(lower_stem) {
-                        return Some(path.to_path_buf());
+                    if stem == lower_stem {
+                        exact_matches.push(path.to_path_buf());
+                    } else if stem.starts_with(lower_stem) {
+                        prefix_matches.push(path.to_path_buf());
+                    } else if stem.contains(lower_stem) {
+                        substring_matches.push(path.to_path_buf());
                     }
                 }
             }
         }
+    }
+
+    if let Some(exact) = exact_matches.into_iter().next() {
+        return Some(exact);
+    }
+    if let Some(prefix) = prefix_matches.into_iter().next() {
+        return Some(prefix);
+    }
+    if let Some(substring) = substring_matches.into_iter().next() {
+        return Some(substring);
     }
 
     None
@@ -854,15 +895,47 @@ impl Tool for DesktopAppTool {
                     app_to_launch.to_string()
                 };
 
-                // Fast path: If target_path is an actual .exe file on disk, spawn directly via Win32 CreateProcess
-                let is_direct_exe = target_path.to_lowercase().ends_with(".exe") && PathBuf::from(&target_path).is_file();
-                if is_direct_exe {
-                    if let Ok(child) = hidden_tokio_command(&target_path).spawn() {
-                        let pid = child.id().unwrap_or(0);
+                // Native Windows ShellExecute: launches .exe, shortcuts (.lnk), or apps directly in foreground
+                #[cfg(windows)]
+                {
+                    use std::ffi::OsStr;
+                    use std::os::windows::ffi::OsStrExt;
+
+                    let wide_file: Vec<u16> = OsStr::new(&target_path)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+                    let wide_op: Vec<u16> = OsStr::new("open")
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+
+                    let parent_buf = PathBuf::from(&target_path);
+                    let working_dir: Option<Vec<u16>> = parent_buf.parent().and_then(|p| {
+                        if p.exists() {
+                            Some(p.as_os_str().encode_wide().chain(std::iter::once(0)).collect())
+                        } else {
+                            None
+                        }
+                    });
+                    let dir_ptr = working_dir.as_ref().map(|v| v.as_ptr()).unwrap_or(std::ptr::null());
+
+                    let ret = unsafe {
+                        win32::ShellExecuteW(
+                            0,
+                            wide_op.as_ptr(),
+                            wide_file.as_ptr(),
+                            std::ptr::null(),
+                            dir_ptr,
+                            1, // SW_SHOWNORMAL
+                        )
+                    };
+
+                    if ret > 32 {
                         return Ok(ToolExecutionResult {
                             tool_call_id: call_id.to_string(),
                             tool_name: "desktop_app".to_string(),
-                            stdout: format!("Successfully launched '{app_to_launch}' (PID: {pid}, Path: {target_path})."),
+                            stdout: format!("Successfully launched '{app_to_launch}' (Path: {target_path})."),
                             stderr: String::new(),
                             exit_code: Some(0),
                             duration_ms: start.elapsed().as_millis() as u64,
@@ -872,8 +945,17 @@ impl Tool for DesktopAppTool {
                     }
                 }
 
-                // Fallback to PowerShell Start-Process for shortcuts (.lnk), UWP apps, or system commands
-                let script = format!("Start-Process '{}'", target_path.replace('\'', "''"));
+                // Fallback to PowerShell Start-Process with WorkingDirectory for shortcuts (.lnk), UWP apps, or system commands
+                let working_dir_arg = if let Some(parent) = PathBuf::from(&target_path).parent() {
+                    if parent.exists() {
+                        format!(" -WorkingDirectory '{}'", parent.to_string_lossy().replace('\'', "''"))
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+                let script = format!("Start-Process '{}'{working_dir_arg}", target_path.replace('\'', "''"));
                 let output = hidden_tokio_command("powershell.exe")
                     .args(["-NoProfile", "-NonInteractive", "-Command", &script])
                     .output()
