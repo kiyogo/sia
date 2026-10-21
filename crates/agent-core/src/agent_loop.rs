@@ -159,6 +159,18 @@ impl AgentLoop {
                 }
             };
 
+            // If model returned thoughts / reasoning, notify frontend via ModelThinking
+            if let Some(content_str) = &resp.content {
+                if let Some(start) = content_str.find("<think>") {
+                    if let Some(end) = content_str.find("</think>") {
+                        let reasoning = &content_str[start + 7..end];
+                        let _ = self.event_sender.send(AgentEvent::ModelThinking {
+                            preview: reasoning.trim().to_string(),
+                        });
+                    }
+                }
+            }
+
             // Aggregate token usage
             cumulative_usage.prompt_tokens += resp.usage.prompt_tokens;
             cumulative_usage.completion_tokens += resp.usage.completion_tokens;

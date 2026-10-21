@@ -75,7 +75,7 @@ impl OpenAiCompatibleProvider {
             api_key,
             default_model,
             client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(std::time::Duration::from_secs(120))
                 .build()
                 .unwrap_or_default(),
         }
@@ -89,7 +89,13 @@ impl ModelProvider for OpenAiCompatibleProvider {
     }
 
     async fn test_connection(&self) -> CoreResult<bool> {
-        let url = format!("{}/models", self.base_url);
+        let base = self.base_url.trim_end_matches('/');
+        let candidates = vec![
+            format!("{}/models", base),
+            format!("{}/v1/models", base),
+            base.to_string(),
+        ];
+
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if !self.api_key.is_empty() {
@@ -98,19 +104,37 @@ impl ModelProvider for OpenAiCompatibleProvider {
             }
         }
 
-        let resp = self
-            .client
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| CoreError::Model(format!("Failed to connect to provider at {}: {e}", self.base_url)))?;
+        let quick_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(6))
+            .build()
+            .unwrap_or_else(|_| self.client.clone());
 
-        Ok(resp.status().is_success() || resp.status().as_u16() == 401)
+        for url in candidates {
+            if let Ok(resp) = quick_client.get(&url).headers(headers.clone()).send().await {
+                let status = resp.status();
+                if status.is_success() || status.as_u16() == 401 || status.as_u16() == 403 {
+                    return Ok(true);
+                }
+            }
+        }
+
+        // If models list failed, try a quick ping on the base url
+        if let Ok(resp) = quick_client.get(base).headers(headers).send().await {
+            if resp.status().is_success() || resp.status().as_u16() == 401 {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     async fn generate(&self, req: &ModelRequest) -> CoreResult<ModelResponse> {
-        let url = format!("{}/chat/completions", self.base_url);
+        let base = self.base_url.trim_end_matches('/');
+        let url = if base.ends_with("/chat/completions") {
+            base.to_string()
+        } else {
+            format!("{}/chat/completions", base)
+        };
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -152,14 +176,25 @@ impl ModelProvider for OpenAiCompatibleProvider {
 
         debug!("Sending request to {}: {}", url, body);
 
-        let res = self
+        let mut res = self
             .client
             .post(&url)
-            .headers(headers)
+            .headers(headers.clone())
             .json(&body)
             .send()
             .await
-            .map_err(|e| CoreError::Model(format!("Request to provider failed: {e}")))?;
+            .map_err(|e| CoreError::Model(format!("Request to provider at {} failed: {e}", url)))?;
+
+        // If 404 and base ends with /api, attempt fallback to /chat/completions or /v1/chat/completions
+        if res.status().as_u16() == 404 && base.ends_with("/api") {
+            let alt_base = base.trim_end_matches("/api");
+            let alt_url = format!("{}/chat/completions", alt_base);
+            if let Ok(alt_res) = self.client.post(&alt_url).headers(headers.clone()).json(&body).send().await {
+                if alt_res.status().is_success() {
+                    res = alt_res;
+                }
+            }
+        }
 
         let status = res.status();
         let text = res
@@ -186,10 +221,27 @@ impl ModelProvider for OpenAiCompatibleProvider {
             .get("message")
             .ok_or_else(|| CoreError::Model("Choice missing 'message'".to_string()))?;
 
-        let content = message
+        // Extract reasoning / thought content if provided by reasoning models
+        let reasoning_opt = message
+            .get("reasoning_content")
+            .or_else(|| message.get("reasoning"))
+            .or_else(|| message.get("thought"))
+            .and_then(|r| r.as_str());
+
+        let mut content = message
             .get("content")
             .and_then(|c| c.as_str())
             .map(String::from);
+
+        if let Some(reasoning) = reasoning_opt {
+            if !reasoning.trim().is_empty() {
+                let think_block = format!("<think>\n{}\n</think>\n\n", reasoning.trim());
+                content = match content {
+                    Some(c) => Some(format!("{}{}", think_block, c)),
+                    None => Some(think_block),
+                };
+            }
+        }
 
         let mut tool_calls = Vec::new();
         if let Some(calls) = message.get("tool_calls").and_then(|tc| tc.as_array()) {

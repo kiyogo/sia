@@ -294,8 +294,7 @@ async fn save_runtime_config(
 
 #[tauri::command]
 async fn test_provider_connection(state: State<'_, AppState>) -> Result<bool, String> {
-    let stats = state.host.get_dashboard_stats().await.map_err(|e| e.to_string())?;
-    Ok(stats.provider_connected)
+    state.host.test_provider_connection().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

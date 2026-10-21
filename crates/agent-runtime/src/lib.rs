@@ -305,6 +305,18 @@ impl RuntimeHost {
         *prov = Some(provider);
     }
 
+    pub async fn test_provider_connection(&self) -> RuntimeResult<bool> {
+        let prov = {
+            let lock = self.provider.read().await;
+            lock.clone()
+        };
+        if let Some(p) = prov {
+            p.test_connection().await.map_err(RuntimeError::Core)
+        } else {
+            Err(RuntimeError::ProviderNotConfigured)
+        }
+    }
+
     pub async fn get_config(&self) -> RuntimeConfig {
         self.config.read().await.clone()
     }
@@ -364,11 +376,7 @@ impl RuntimeHost {
 
         let provider_connected = {
             let prov_lock = self.provider.read().await;
-            if let Some(prov) = prov_lock.as_ref() {
-                prov.test_connection().await.unwrap_or(false)
-            } else {
-                false
-            }
+            prov_lock.is_some()
         };
 
         let browser_connected = self.browser_mcp.is_connected().await;
