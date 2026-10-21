@@ -764,7 +764,14 @@ unsafe fn ensure_single_instance_or_focus(debug_mode: bool) -> bool {
 async fn main() {
     std::panic::set_hook(Box::new(|info| {
         let panic_path = std::env::temp_dir().join("aai_desktop_panic.log");
-        let _ = std::fs::write(&panic_path, format!("PANIC: {:?}", info));
+        let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            format!("{:?}", info)
+        };
+        let _ = std::fs::write(&panic_path, format!("PANIC: {}\nLocation: {:?}", msg, info.location()));
     }));
 
     tracing_subscriber::fmt::init();
