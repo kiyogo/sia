@@ -42,14 +42,12 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [editingTitle, setEditingTitle] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Filter conversations
   const filteredConversations = useMemo(() => {
     if (!searchQuery.trim()) return conversations;
     const query = searchQuery.toLowerCase();
     return conversations.filter((c) => c.title.toLowerCase().includes(query));
   }, [conversations, searchQuery]);
 
-  // Group conversations by date: Today, Yesterday, Previous 7 Days, Older
   const groupedConversations = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -115,15 +113,15 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   return (
     <aside
-      className={`h-full bg-surface border-r border-border flex flex-col flex-shrink-0 transition-all duration-200 select-none ${
+      className={`h-full bg-white dark:bg-[#121215] border-r border-zinc-200 dark:border-zinc-800/80 flex flex-col flex-shrink-0 transition-all duration-200 select-none ${
         isOpen ? 'w-64' : 'w-0'
       } overflow-hidden`}
     >
       {/* Top action: New chat */}
-      <div className="p-3 border-b border-border-subtle flex flex-col gap-2">
+      <div className="p-3 border-b border-zinc-100 dark:border-zinc-800/60 flex flex-col gap-2">
         <button
           onClick={onNewChat}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 text-sm font-medium rounded-lg bg-primary text-surface hover:opacity-90 transition-opacity shadow-sm"
+          className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-white transition-all shadow-sm"
         >
           <Plus className="w-4 h-4" />
           <span>{t('Cuộc trò chuyện mới', 'New Chat')}</span>
@@ -131,18 +129,18 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
         {/* Search Input */}
         <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('Tìm kiếm...', 'Search chats...')}
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/60 text-primary placeholder-muted rounded-md border border-transparent focus:border-border focus:outline-none transition-colors"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800/70 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 rounded-md border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 focus:outline-none transition-colors"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               <X className="w-3 h-3" />
             </button>
@@ -153,7 +151,7 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       {/* Conversation List */}
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
         {filteredConversations.length === 0 ? (
-          <div className="px-3 py-8 text-center text-xs text-muted">
+          <div className="px-3 py-8 text-center text-xs text-zinc-400 dark:text-zinc-500">
             {searchQuery
               ? t('Không tìm thấy cuộc trò chuyện', 'No conversations found')
               : t('Chưa có lịch sử trò chuyện', 'No conversation history')}
@@ -225,12 +223,12 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="p-2 border-t border-border flex items-center justify-between text-xs text-secondary bg-surface">
+      <div className="p-2 border-t border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400 bg-white dark:bg-[#121215]">
         <div
           className="flex items-center gap-1.5 truncate max-w-[170px]"
           title={workspacePath || 'Workspace'}
         >
-          <FolderGit2 className="w-3.5 h-3.5 text-muted flex-shrink-0" />
+          <FolderGit2 className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
           <span className="truncate font-mono text-[11px]">
             {workspacePath ? workspacePath.split(/[/\\]/).filter(Boolean).pop() : 'Workspace'}
           </span>
@@ -239,7 +237,7 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         <button
           onClick={onOpenSettings}
           title={t('Cài đặt', 'Settings')}
-          className="p-1.5 rounded-md hover:bg-muted text-secondary hover:text-primary transition-colors"
+          className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
         >
           <Settings className="w-4 h-4" />
         </button>
@@ -248,7 +246,6 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   );
 };
 
-// Helper to render date section
 function renderGroup(
   title: string,
   items: Conversation[],
@@ -268,7 +265,7 @@ function renderGroup(
 
   return (
     <div className="space-y-1">
-      <div className="px-2 text-[11px] font-semibold tracking-wider uppercase text-muted">
+      <div className="px-2 text-[10px] font-semibold tracking-wider uppercase text-zinc-400 dark:text-zinc-500">
         {title}
       </div>
       <div className="space-y-0.5">
@@ -283,8 +280,8 @@ function renderGroup(
               onClick={() => onSelectConv(conv.id)}
               className={`group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
                 isActive
-                  ? 'bg-muted text-primary font-medium'
-                  : 'text-secondary hover:text-primary hover:bg-muted/50'
+                  ? 'bg-zinc-100 dark:bg-zinc-800/80 text-zinc-900 dark:text-zinc-100 font-medium'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/60 dark:hover:bg-zinc-800/40'
               }`}
             >
               {isEditing ? (
@@ -298,18 +295,18 @@ function renderGroup(
                     value={editingTitle}
                     onChange={(e) => setEditingTitle(e.target.value)}
                     autoFocus
-                    className="flex-1 px-1.5 py-0.5 text-xs bg-surface border border-border rounded text-primary focus:outline-none"
+                    className="flex-1 px-1.5 py-0.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:outline-none"
                   />
                   <button
                     type="submit"
-                    className="p-1 hover:text-emerald-500 text-muted"
+                    className="p-1 hover:text-emerald-500 text-zinc-400"
                   >
                     <Check className="w-3 h-3" />
                   </button>
                   <button
                     type="button"
                     onClick={handleCancelRename}
-                    className="p-1 hover:text-red-500 text-muted"
+                    className="p-1 hover:text-red-500 text-zinc-400"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -317,11 +314,10 @@ function renderGroup(
               ) : (
                 <>
                   <div className="flex items-center gap-2 truncate pr-2">
-                    <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 text-muted" />
+                    <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400 dark:text-zinc-500" />
                     <span className="truncate">{conv.title || 'Untitled'}</span>
                   </div>
 
-                  {/* Actions on hover */}
                   <div
                     className={`flex items-center gap-0.5 transition-opacity ${
                       isActive || isConfirmingDelete
@@ -331,7 +327,7 @@ function renderGroup(
                   >
                     {isConfirmingDelete ? (
                       <div
-                        className="flex items-center gap-1 bg-red-500/10 text-red-500 px-1 py-0.5 rounded text-[10px]"
+                        className="flex items-center gap-1 bg-red-500/10 text-red-600 dark:text-red-400 px-1 py-0.5 rounded text-[10px]"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
@@ -352,14 +348,14 @@ function renderGroup(
                       <>
                         <button
                           onClick={(e) => handleStartRename(conv, e)}
-                          className="p-1 text-muted hover:text-primary rounded transition-colors"
+                          className="p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded transition-colors"
                           title="Đổi tên"
                         >
                           <Edit2 className="w-3 h-3" />
                         </button>
                         <button
                           onClick={(e) => handleDelete(conv.id, e)}
-                          className="p-1 text-muted hover:text-red-500 rounded transition-colors"
+                          className="p-1 text-zinc-400 hover:text-red-500 rounded transition-colors"
                           title="Xóa"
                         >
                           <Trash2 className="w-3 h-3" />

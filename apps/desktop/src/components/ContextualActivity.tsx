@@ -31,7 +31,6 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
   const { t } = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Parse arguments if JSON
   const parsedArgs = React.useMemo(() => {
     if (!activity.arguments) return null;
     try {
@@ -41,7 +40,6 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
     }
   }, [activity.arguments]);
 
-  // Derive human-readable tool title & icon
   const { icon, title, subtitle } = React.useMemo(() => {
     const name = activity.toolName.toLowerCase();
 
@@ -82,22 +80,22 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
     }
 
     return {
-      icon: <Cpu className="w-3.5 h-3.5 text-accent" />,
+      icon: <Cpu className="w-3.5 h-3.5 text-blue-500" />,
       title: activity.toolName,
       subtitle: '',
     };
   }, [activity.toolName, parsedArgs, t]);
 
   return (
-    <div className="my-2 rounded-lg border border-border bg-surface/80 overflow-hidden text-xs transition-all shadow-sm">
+    <div className="my-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#151518] overflow-hidden text-xs transition-all shadow-sm">
       {/* Activity Summary Bar */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
       >
         <div className="flex items-center gap-2 overflow-hidden">
           {activity.status === 'running' && (
-            <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />
+            <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin flex-shrink-0" />
           )}
           {activity.status === 'completed' && (
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
@@ -108,16 +106,16 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
 
           <div className="flex items-center gap-1.5 overflow-hidden">
             {icon}
-            <span className="font-medium text-primary whitespace-nowrap">{title}</span>
+            <span className="font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">{title}</span>
             {subtitle && (
-              <span className="text-secondary font-mono truncate max-w-[280px] sm:max-w-[380px]">
+              <span className="text-zinc-500 dark:text-zinc-400 font-mono truncate max-w-[280px] sm:max-w-[380px]">
                 ({subtitle})
               </span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0 text-muted">
+        <div className="flex items-center gap-2 flex-shrink-0 text-zinc-400 dark:text-zinc-500">
           {activity.durationMs !== undefined && (
             <span className="text-[10px] font-mono">{activity.durationMs}ms</span>
           )}
@@ -131,14 +129,14 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
 
       {/* Expanded Details */}
       {isExpanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-border-subtle bg-muted/20 space-y-2">
+        <div className="px-3 pb-3 pt-1 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 space-y-2">
           {/* Arguments */}
           {activity.arguments && (
             <div>
-              <div className="text-[10px] uppercase font-semibold text-muted mb-1">
+              <div className="text-[10px] uppercase font-semibold text-zinc-400 dark:text-zinc-500 mb-1">
                 {t('Tham số đầu vào', 'Parameters')}
               </div>
-              <pre className="p-2 rounded bg-muted/60 font-mono text-[11px] text-secondary overflow-x-auto leading-relaxed whitespace-pre-wrap">
+              <pre className="p-2 rounded bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-[11px] text-zinc-700 dark:text-zinc-300 overflow-x-auto leading-relaxed whitespace-pre-wrap">
                 {typeof parsedArgs === 'object'
                   ? JSON.stringify(parsedArgs, null, 2)
                   : String(activity.arguments)}
@@ -149,7 +147,7 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
           {/* Output / Result */}
           {activity.output && (
             <div>
-              <div className="text-[10px] uppercase font-semibold text-muted mb-1 flex items-center justify-between">
+              <div className="text-[10px] uppercase font-semibold text-zinc-400 dark:text-zinc-500 mb-1 flex items-center justify-between">
                 <span>{t('Kết quả đầu ra', 'Execution Output')}</span>
                 {activity.exitCode !== undefined && (
                   <span className="font-mono text-[10px]">

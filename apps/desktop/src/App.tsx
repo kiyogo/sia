@@ -134,7 +134,7 @@ const MainApp: React.FC = () => {
     conversations.find((c) => c.id === activeConvId) || null;
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-app text-primary overflow-hidden font-sans">
+    <div className="flex flex-col h-screen w-screen bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors">
       {/* 1. Ultra Minimal Window Header */}
       <WindowHeader
         sidebarOpen={sidebarOpen}
@@ -169,6 +169,7 @@ const MainApp: React.FC = () => {
             modelName={stats?.model_name || 'Universal AI'}
             pendingApprovals={pendingApprovals}
             onResolveApproval={handleResolveApproval}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
         </main>
       </div>

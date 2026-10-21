@@ -24,7 +24,6 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-resize textarea based on scrollHeight
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -53,7 +52,6 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // If user is currently composing with Vietnamese IME, do not trigger submit
     if (isComposing || e.nativeEvent.isComposing) {
       return;
     }
@@ -86,9 +84,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           {attachedFiles.map((file, idx) => (
             <div
               key={idx}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md bg-muted text-secondary border border-border"
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
             >
-              <FileText className="w-3.5 h-3.5 text-muted" />
+              <FileText className="w-3.5 h-3.5 text-zinc-400" />
               <span className="truncate max-w-[150px]">{file.name}</span>
               <button
                 onClick={() => removeAttachment(idx)}
@@ -102,7 +100,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       )}
 
       {/* Main Composer Box */}
-      <div className="relative flex flex-col rounded-2xl bg-surface border border-border shadow-sm focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/10 transition-all duration-150">
+      <div className="relative flex flex-col rounded-2xl bg-white dark:bg-[#151518] border border-zinc-200 dark:border-zinc-800 shadow-sm focus-within:border-blue-500/70 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all duration-150">
         <textarea
           ref={textareaRef}
           value={text}
@@ -113,7 +111,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           placeholder={t('Nhập tin nhắn hoặc giao nhiệm vụ cho AI...', 'Ask a question or assign an autonomous task...')}
           rows={1}
           disabled={disabled}
-          className="w-full px-4 pt-3 pb-2 bg-transparent text-primary placeholder-muted resize-none focus:outline-none text-sm leading-relaxed"
+          className="w-full px-4 pt-3 pb-2 bg-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 resize-none focus:outline-none text-sm leading-relaxed"
           style={{ minHeight: '42px', maxHeight: '200px' }}
         />
 
@@ -132,13 +130,13 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               title={t('Đính kèm tệp', 'Attach file')}
-              className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-muted transition-colors"
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
               <Paperclip className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-muted/70 text-secondary border border-border-subtle select-none">
-              <Sparkles className="w-3 h-3 text-accent" />
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 border border-zinc-200/80 dark:border-zinc-700/60 select-none">
+              <Sparkles className="w-3 h-3 text-blue-500" />
               <span className="truncate max-w-[140px]">{modelName}</span>
             </div>
           </div>
@@ -162,8 +160,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 title={t('Gửi tin nhắn (Enter)', 'Send message (Enter)')}
                 className={`p-2 rounded-xl transition-all shadow-sm ${
                   text.trim() || attachedFiles.length > 0
-                    ? 'bg-primary text-surface hover:opacity-90'
-                    : 'bg-muted text-muted cursor-not-allowed'
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-90'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed'
                 }`}
               >
                 <ArrowUp className="w-4 h-4 stroke-[2.5]" />
@@ -174,7 +172,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       </div>
 
       {/* Subtle Hint */}
-      <div className="flex items-center justify-between mt-1 px-2 text-[11px] text-muted select-none">
+      <div className="flex items-center justify-between mt-1 px-2 text-[11px] text-zinc-400 dark:text-zinc-500 select-none">
         <span>
           {t('Nhấn Enter để gửi · Shift+Enter để xuống dòng', 'Press Enter to send · Shift+Enter for new line')}
         </span>
