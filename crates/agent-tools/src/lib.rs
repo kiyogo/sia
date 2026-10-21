@@ -5,6 +5,7 @@ pub mod code_intelligence;
 pub mod filesystem;
 pub mod git;
 pub mod mcp_client;
+pub mod native_windows_mcp;
 pub mod registry;
 pub mod terminal;
 pub mod todo;
@@ -18,6 +19,11 @@ pub use code_intelligence::{CodeSearchTool, FileOutlineTool, ProjectDetectTool, 
 pub use filesystem::{FileListTool, FilePatchTool, FileReadTool, FileSearchTool, FileWriteTool};
 pub use git::{GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool};
 pub use mcp_client::{McpClient, McpToolInfo};
+pub use native_windows_mcp::{
+    DesktopAppTool, DesktopClickTool, DesktopClipboardTool, DesktopMoveTool, DesktopScreenshotTool,
+    DesktopScrollTool, DesktopShortcutTool, DesktopSnapshotTool, DesktopSwitchWindowTool,
+    DesktopTypeTool,
+};
 pub use registry::{create_default_registry, SharedToolRegistry, ToolRegistry};
 pub use terminal::TerminalTool;
 pub use todo::{TodoItem, TodoWriteTool};
@@ -264,5 +270,63 @@ mod tests {
             .expect("edit alias should resolve and apply");
         assert!(edit_res.stdout.contains("hello.txt"));
         assert!(edit_res.stdout.contains("replacements"));
+    }
+
+    #[tokio::test]
+    async fn test_windows_mcp_native_tools_and_aliases() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().to_path_buf();
+        let fs = Box::new(WindowsFileSystemProvider::new());
+        let sec = Arc::new(SecurityEngine::new(root.clone(), PermissionMode::FullAuto, fs));
+        let executor = Box::new(WindowsShellExecutor::new());
+        let registry = create_default_registry(executor, sec);
+
+        // 1. Verify alias resolution for Click -> desktop_click
+        let click_alias = registry.get("Click").await;
+        assert!(click_alias.is_some(), "Click alias must resolve");
+        assert_eq!(click_alias.unwrap().definition().name, "desktop_click");
+
+        // 2. Verify alias resolution for Type -> desktop_type
+        let type_alias = registry.get("Type").await;
+        assert!(type_alias.is_some(), "Type alias must resolve");
+        assert_eq!(type_alias.unwrap().definition().name, "desktop_type");
+
+        // 3. Verify alias resolution for Snapshot -> desktop_snapshot
+        let snap_alias = registry.get("Snapshot").await;
+        assert!(snap_alias.is_some(), "Snapshot alias must resolve");
+        assert_eq!(snap_alias.unwrap().definition().name, "desktop_snapshot");
+
+        // 4. Test Click with 0 clicks (hover only)
+        let click_res = registry
+            .execute(
+                "Click",
+                "call_click_hover",
+                json!({ "loc": [100, 100], "clicks": 0 }),
+            )
+            .await
+            .expect("hover click should succeed");
+        assert!(click_res.stdout.contains("Hovered"));
+
+        // 5. Test Snapshot execution
+        let snap_res = registry
+            .execute(
+                "Snapshot",
+                "call_snap_1",
+                json!({}),
+            )
+            .await
+            .expect("snapshot should succeed");
+        assert!(snap_res.stdout.contains("open_windows_count") || snap_res.stdout.contains("cursor_position"));
+
+        // 6. Test Clipboard get
+        let clip_res = registry
+            .execute(
+                "Clipboard",
+                "call_clip_get",
+                json!({ "mode": "get" }),
+            )
+            .await
+            .expect("clipboard get should succeed");
+        assert_eq!(clip_res.exit_code, Some(0));
     }
 }

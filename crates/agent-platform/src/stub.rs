@@ -6,6 +6,14 @@ use crate::traits::{
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 
+pub fn hidden_tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::Command {
+    tokio::process::Command::new(program)
+}
+
+pub fn hidden_std_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    std::process::Command::new(program)
+}
+
 pub struct GenericOperatingSystemAdapter;
 
 #[async_trait]
