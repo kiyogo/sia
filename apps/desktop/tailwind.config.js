@@ -8,9 +8,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        app: "var(--bg-app)",
+        surface: "var(--bg-surface)",
+        muted: "var(--bg-muted)",
+        border: "var(--border-color)",
+        'border-subtle': "var(--border-subtle)",
+        accent: "var(--accent)",
+        'accent-hover': "var(--accent-hover)",
+        'accent-subtle': "var(--accent-subtle)",
+      },
+      textColor: {
+        primary: "var(--text-primary)",
+        secondary: "var(--text-secondary)",
+        muted: "var(--text-muted)",
       }
     },
   },
