@@ -12,6 +12,13 @@ import {
   Code2,
   ListTodo,
   Search,
+  MousePointer,
+  Keyboard,
+  Camera,
+  Play,
+  Clipboard,
+  AppWindow,
+  ArrowDownUp,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -57,6 +64,98 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
       };
     }
 
+    // Windows-MCP Mouse & Cursor tools
+    if (name === 'desktop_click' || name === 'click') {
+      const loc = parsedArgs?.loc;
+      const clicks = parsedArgs?.clicks;
+      const verb = clicks === 0 ? 'Hovered' : clicks === 2 ? 'Double clicked' : 'Clicked';
+      const locText = Array.isArray(loc) && loc.length >= 2 ? `at (${loc[0]}, ${loc[1]})` : 'mouse';
+      return {
+        actionVerb: verb,
+        targetText: locText,
+        icon: <MousePointer className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name === 'desktop_move' || name === 'move') {
+      const loc = parsedArgs?.loc;
+      const drag = parsedArgs?.drag;
+      const verb = drag ? 'Dragged mouse' : 'Moved mouse';
+      const locText = Array.isArray(loc) && loc.length >= 2 ? `to (${loc[0]}, ${loc[1]})` : 'cursor';
+      return {
+        actionVerb: verb,
+        targetText: locText,
+        icon: <MousePointer className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name === 'desktop_scroll' || name === 'scroll') {
+      const dir = parsedArgs?.direction || 'down';
+      const wheel = parsedArgs?.wheel_times || 1;
+      return {
+        actionVerb: 'Scrolled',
+        targetText: `${dir} (${wheel}x)`,
+        icon: <ArrowDownUp className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    // Windows-MCP Keyboard tools
+    if (name === 'desktop_type' || name === 'type') {
+      const txt = parsedArgs?.text || '';
+      const preview = txt.length > 25 ? `${txt.slice(0, 25)}...` : txt;
+      return {
+        actionVerb: 'Typed',
+        targetText: preview ? `"${preview}"` : 'text',
+        icon: <Keyboard className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name === 'desktop_shortcut' || name === 'shortcut') {
+      const shortcut = parsedArgs?.shortcut || '';
+      return {
+        actionVerb: 'Pressed shortcut',
+        targetText: shortcut || 'keys',
+        icon: <Keyboard className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    // Windows-MCP Desktop / App tools
+    if (name === 'desktop_app' || name === 'launch' || name === 'app') {
+      const appName = parsedArgs?.name || parsedArgs?.executable || 'application';
+      const mode = parsedArgs?.mode || 'launch';
+      return {
+        actionVerb: mode === 'switch' ? 'Switched window' : 'Launched',
+        targetText: String(appName).split('\\').pop() || 'app',
+        icon: <Play className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name === 'desktop_switch_window' || name === 'switchwindow') {
+      const title = parsedArgs?.title || 'window';
+      return {
+        actionVerb: 'Switched window',
+        targetText: String(title).slice(0, 40),
+        icon: <AppWindow className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name === 'desktop_clipboard' || name === 'clipboard') {
+      const mode = parsedArgs?.mode || 'get';
+      return {
+        actionVerb: mode === 'set' ? 'Copied' : 'Read',
+        targetText: mode === 'set' ? 'to clipboard' : 'clipboard content',
+        icon: <Clipboard className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
+    if (name === 'desktop_snapshot' || name === 'desktop_screenshot' || name === 'snapshot' || name === 'screenshot' || name === 'state') {
+      return {
+        actionVerb: 'Captured',
+        targetText: name.includes('screenshot') ? 'desktop screenshot' : 'desktop snapshot state',
+        icon: <Camera className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />,
+      };
+    }
+
     if (name.includes('glob') || name.includes('grep') || name.includes('search')) {
       const pattern = parsedArgs?.pattern || '';
       return {
@@ -96,7 +195,7 @@ export const ContextualActivity: React.FC<ContextualActivityProps> = ({ activity
       };
     }
 
-    if (name.includes('browser') || name.includes('navigate') || name.includes('click')) {
+    if (name.includes('browser') || name.includes('navigate')) {
       const url = parsedArgs?.url || '';
       return {
         actionVerb: 'Browsed',
