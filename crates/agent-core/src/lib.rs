@@ -14,7 +14,9 @@ pub mod token_optimizer;
 pub mod tool_router;
 pub mod verifier;
 
-pub use agent_loop::{AgentEvent, AgentLoop};
+pub use agent_loop::{
+    detect_app_launch_request, extract_text_tool_calls, AgentEvent, AgentLoop,
+};
 pub use business::*;
 pub use coding_loop::{CodingMode, CodingWorkflowEngine};
 pub use data::*;
@@ -514,5 +516,30 @@ Services,9200,22
         cb.record_success();
         assert!(cb.can_execute());
         assert_eq!(cb.state(), CircuitState::Closed);
+    }
+
+    #[test]
+    fn test_autonomous_app_launch_intent_and_text_tools() {
+        // 1. Test Vietnamese and English app launch intent extraction
+        assert_eq!(detect_app_launch_request("mo app zalo cho tôi"), Some("zalo".to_string()));
+        assert_eq!(detect_app_launch_request("mở zalo giúp tôi với"), Some("zalo".to_string()));
+        assert_eq!(detect_app_launch_request("mở ứng dụng notepad"), Some("notepad".to_string()));
+        assert_eq!(detect_app_launch_request("open app chrome for me"), Some("chrome".to_string()));
+        assert_eq!(detect_app_launch_request("launch calculator please"), Some("calculator".to_string()));
+        assert_eq!(detect_app_launch_request("bật zalo lên đi"), Some("zalo".to_string()));
+        assert_eq!(detect_app_launch_request("hãy viết code fibonacci"), None);
+
+        // 2. Test text-based tool call parsing
+        let sample = r#"
+Sure! I am going to launch Zalo for you now:
+<tool_call>
+{"name": "desktop_app", "arguments": {"mode": "launch", "name": "zalo"}}
+</tool_call>
+Please check your screen.
+"#;
+        let parsed = extract_text_tool_calls(sample);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].function.name, "desktop_app");
+        assert!(parsed[0].function.arguments.contains("zalo"));
     }
 }

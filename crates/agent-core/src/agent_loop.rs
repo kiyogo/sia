@@ -1,5 +1,5 @@
 use crate::error::{CoreError, CoreResult};
-use crate::model::{ChatMessage, ModelProvider, ModelRequest, ModelUsage};
+use crate::model::{ChatMessage, FunctionCall, ModelProvider, ModelRequest, ModelUsage, ToolCall};
 use crate::token_optimizer::TokenOptimizer;
 use agent_security::SharedSecurityEngine;
 use agent_storage::{Checkpoint, Database, Message as StorageMessage, Task, TaskStatus, ToolAuditLog};
@@ -198,8 +198,36 @@ impl AgentLoop {
                 total_tokens: cumulative_usage.total_tokens,
             });
 
-            // Check if model emitted tool calls
-            if resp.tool_calls.is_empty() {
+            let mut active_tool_calls = resp.tool_calls.clone();
+
+            // 1. Text-based tool call extraction if model emitted XML/JSON tags in content
+            if active_tool_calls.is_empty() {
+                if let Some(content_str) = &resp.content {
+                    active_tool_calls = extract_text_tool_calls(content_str);
+                }
+            }
+
+            // 2. Autonomous intent resolver: If step 1 and user explicitly commanded to launch/open an app
+            // but model merely replied with how-to text without calling a tool, execute autonomously!
+            if active_tool_calls.is_empty() && step == 1 {
+                if let Some(app_name) = detect_app_launch_request(user_request) {
+                    info!("Detected explicit app launch intent for '{app_name}', executing autonomously");
+                    active_tool_calls.push(ToolCall {
+                        id: format!("call_auto_{}", Uuid::new_v4().simple()),
+                        r#type: "function".to_string(),
+                        function: FunctionCall {
+                            name: "desktop_app".to_string(),
+                            arguments: serde_json::json!({
+                                "mode": "launch",
+                                "name": app_name
+                            }).to_string(),
+                        },
+                    });
+                }
+            }
+
+            // Check if model emitted tool calls or autonomous action was triggered
+            if active_tool_calls.is_empty() {
                 // Final answer reached
                 let final_text = resp.content.unwrap_or_else(|| "Task finished.".to_string());
                 let _ = self.event_sender.send(AgentEvent::FinalAnswer {
@@ -253,18 +281,18 @@ impl AgentLoop {
                 return Ok(final_text);
             }
 
-            let call_count = resp.tool_calls.len();
+            let call_count = active_tool_calls.len();
 
             // Append assistant response turn containing tool calls
             messages.push(ChatMessage {
                 role: "assistant".to_string(),
                 content: resp.content.clone(),
-                tool_calls: Some(resp.tool_calls.clone()),
+                tool_calls: Some(active_tool_calls.clone()),
                 tool_call_id: None,
             });
 
             // Execute tool calls
-            for call in resp.tool_calls {
+            for call in active_tool_calls {
                 let fn_name = call.function.name;
                 let call_id = call.id;
                 let args_str = call.function.arguments;
@@ -373,4 +401,123 @@ impl AgentLoop {
 
         Err(CoreError::MaxLoopsExceeded(self.max_loops))
     }
+}
+
+/// Detects explicit user intent to launch or open an application on Windows
+pub fn detect_app_launch_request(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    let trimmed = lower.trim();
+
+    let prefixes = [
+        "mở app ",
+        "mo app ",
+        "mở ứng dụng ",
+        "mo ung dung ",
+        "mở phần mềm ",
+        "mo phan mem ",
+        "open app ",
+        "open application ",
+        "launch app ",
+        "launch ",
+        "start app ",
+        "start ",
+        "khởi chạy ",
+        "khoi chay ",
+        "bật app ",
+        "bat app ",
+        "bật ",
+        "bat ",
+        "mở ",
+        "mo ",
+        "open ",
+    ];
+
+    let stop_words = [
+        "cho", "giúp", "giup", "hộ", "ho", "với", "voi", "lên", "len",
+        "đi", "di", "nhé", "nhe", "nào", "nao", "dùm", "dum", "please", "for", "with"
+    ];
+
+    for prefix in prefixes {
+        if trimmed.starts_with(prefix) {
+            let remainder = trimmed[prefix.len()..].trim();
+            let mut app_tokens = Vec::new();
+            for word in remainder.split_whitespace() {
+                let clean_word = word.trim_matches(|c: char| !c.is_alphanumeric());
+                if stop_words.contains(&clean_word) {
+                    break;
+                }
+                app_tokens.push(clean_word);
+            }
+
+            if !app_tokens.is_empty() {
+                let app = app_tokens.join(" ");
+                if app.len() < 50 {
+                    return Some(app);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Parses text-based tool calls from model content formatted in <tool_call>...</tool_call> or ```tool_call
+pub fn extract_text_tool_calls(content: &str) -> Vec<ToolCall> {
+    let mut tool_calls = Vec::new();
+
+    // 1. Check for <tool_call> ... </tool_call>
+    let mut cursor = 0;
+    while let Some(start_idx) = content[cursor..].find("<tool_call>") {
+        let abs_start = cursor + start_idx + 11;
+        if let Some(end_idx) = content[abs_start..].find("</tool_call>") {
+            let json_str = content[abs_start..abs_start + end_idx].trim();
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+                let name = val.get("name").or_else(|| val.get("tool")).and_then(|v| v.as_str());
+                let args = val.get("arguments").or_else(|| val.get("parameters")).or_else(|| val.get("args"));
+                if let (Some(n), Some(a)) = (name, args) {
+                    tool_calls.push(ToolCall {
+                        id: format!("call_txt_{}", Uuid::new_v4().simple()),
+                        r#type: "function".to_string(),
+                        function: FunctionCall {
+                            name: n.to_string(),
+                            arguments: if a.is_string() { a.as_str().unwrap().to_string() } else { a.to_string() },
+                        },
+                    });
+                }
+            }
+            cursor = abs_start + end_idx + 12;
+        } else {
+            break;
+        }
+    }
+
+    // 2. Check for ```tool_call ... ```
+    if tool_calls.is_empty() {
+        let mut cursor = 0;
+        while let Some(start_idx) = content[cursor..].find("```tool_call") {
+            let abs_start = cursor + start_idx + 12;
+            if let Some(end_idx) = content[abs_start..].find("```") {
+                let json_str = content[abs_start..abs_start + end_idx].trim();
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    let name = val.get("name").or_else(|| val.get("tool")).and_then(|v| v.as_str());
+                    let args = val.get("arguments").or_else(|| val.get("parameters")).or_else(|| val.get("args"));
+                    if let (Some(n), Some(a)) = (name, args) {
+                        tool_calls.push(ToolCall {
+                            id: format!("call_block_{}", Uuid::new_v4().simple()),
+                            r#type: "function".to_string(),
+                            function: FunctionCall {
+                                name: n.to_string(),
+                                arguments: if a.is_string() { a.as_str().unwrap().to_string() } else { a.to_string() },
+                            },
+                        });
+                    }
+                }
+                cursor = abs_start + end_idx + 3;
+            } else {
+                break;
+            }
+        }
+    }
+
+    tool_calls
 }

@@ -88,6 +88,74 @@ pub fn parse_coordinates(value: &serde_json::Value) -> Result<(i32, i32), String
     Err("Invalid coordinates. Expected [x, y] format.".to_string())
 }
 
+/// Smart application resolution across all standard Windows installation paths
+pub fn resolve_windows_app(name: &str) -> Option<PathBuf> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // 1. Direct path check
+    let direct = PathBuf::from(trimmed);
+    if direct.is_file() {
+        return Some(direct);
+    }
+
+    let lower = trimmed.to_lowercase();
+    let lower_stem = lower.trim_end_matches(".exe").trim_end_matches(".lnk");
+
+    // 2. Standard Windows system built-in tools
+    match lower_stem {
+        "notepad" => return Some(PathBuf::from("notepad.exe")),
+        "calc" | "calculator" => return Some(PathBuf::from("calc.exe")),
+        "mspaint" | "paint" => return Some(PathBuf::from("mspaint.exe")),
+        "cmd" => return Some(PathBuf::from("cmd.exe")),
+        "powershell" => return Some(PathBuf::from("powershell.exe")),
+        "explorer" => return Some(PathBuf::from("explorer.exe")),
+        "taskmgr" => return Some(PathBuf::from("taskmgr.exe")),
+        _ => {}
+    }
+
+    // 3. Search common program and shortcut locations (Local AppData, Start Menu, Desktop, Program Files)
+    let mut search_dirs = Vec::new();
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        search_dirs.push(PathBuf::from(&local_app_data).join("Programs"));
+    }
+    if let Ok(app_data) = std::env::var("APPDATA") {
+        search_dirs.push(PathBuf::from(&app_data).join(r"Microsoft\Windows\Start Menu\Programs"));
+    }
+    search_dirs.push(PathBuf::from(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"));
+    if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        search_dirs.push(PathBuf::from(&user_profile).join("Desktop"));
+    }
+    search_dirs.push(PathBuf::from(r"C:\Users\Public\Desktop"));
+    search_dirs.push(PathBuf::from(r"C:\Program Files"));
+    search_dirs.push(PathBuf::from(r"C:\Program Files (x86)"));
+
+    for dir in search_dirs {
+        if !dir.exists() {
+            continue;
+        }
+        for entry in walkdir::WalkDir::new(&dir).max_depth(5).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+                let f_lower = file_name.to_lowercase();
+                if f_lower.ends_with(".exe") || f_lower.ends_with(".lnk") {
+                    let stem = f_lower.trim_end_matches(".exe").trim_end_matches(".lnk");
+                    if stem == lower_stem || stem.starts_with(lower_stem) || stem.contains(lower_stem) {
+                        return Some(path.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 // ---------------------------------------------------------------------------
 // 1. DesktopClickTool (Click / desktop_click)
 // ---------------------------------------------------------------------------
@@ -771,7 +839,14 @@ impl Tool for DesktopAppTool {
                     return Err(ToolError::InvalidParameters("Application name or executable path is required".to_string()));
                 }
 
-                let script = format!("Start-Process '{}'", app_to_launch.replace('\'', "''"));
+                // Smartly resolve application path across Windows
+                let target_path = if let Some(resolved) = resolve_windows_app(app_to_launch) {
+                    resolved.to_string_lossy().to_string()
+                } else {
+                    app_to_launch.to_string()
+                };
+
+                let script = format!("Start-Process '{}'", target_path.replace('\'', "''"));
                 let output = hidden_tokio_command("powershell.exe")
                     .args(["-NoProfile", "-NonInteractive", "-Command", &script])
                     .output()
@@ -782,7 +857,7 @@ impl Tool for DesktopAppTool {
                     Ok(ToolExecutionResult {
                         tool_call_id: call_id.to_string(),
                         tool_name: "desktop_app".to_string(),
-                        stdout: format!("Successfully launched '{app_to_launch}'."),
+                        stdout: format!("Successfully launched '{app_to_launch}' (Path: {target_path})."),
                         stderr: String::new(),
                         exit_code: Some(0),
                         duration_ms: start.elapsed().as_millis() as u64,
