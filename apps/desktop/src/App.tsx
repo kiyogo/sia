@@ -24,6 +24,14 @@ export const App: React.FC = () => {
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [isEmergencyStop, setIsEmergencyStop] = useState<boolean>(false);
   const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
+  const [language, setLanguage] = useState<'vi' | 'en'>(() => {
+    return (localStorage.getItem('app_language') as 'vi' | 'en') || 'vi';
+  });
+
+  const handleLanguageChange = (lang: 'vi' | 'en') => {
+    localStorage.setItem('app_language', lang);
+    setLanguage(lang);
+  };
 
   useEffect(() => {
     refreshData();
@@ -72,6 +80,7 @@ export const App: React.FC = () => {
         providerConnected={stats?.provider_connected ?? false}
         mcpConnected={stats?.windows_mcp_connected ?? false}
         pendingApprovalsCount={pendingApprovals.length}
+        language={language}
       />
 
       {/* Main Content Area */}
@@ -105,7 +114,9 @@ export const App: React.FC = () => {
           {currentView === 'runtime' && <RuntimeControlCenter />}
           {currentView === 'workspace' && <Workspace />}
           {currentView === 'terminal' && <TerminalView />}
-          {currentView === 'settings' && <Settings />}
+          {currentView === 'settings' && (
+            <Settings language={language} onLanguageChange={handleLanguageChange} />
+          )}
         </main>
       </div>
 

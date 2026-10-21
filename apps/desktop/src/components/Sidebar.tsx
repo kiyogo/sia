@@ -25,6 +25,7 @@ interface SidebarProps {
   providerConnected: boolean;
   mcpConnected: boolean;
   pendingApprovalsCount: number;
+  language?: 'vi' | 'en';
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,23 +35,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   providerConnected,
   mcpConnected,
   pendingApprovalsCount,
+  language = 'vi',
 }) => {
+  const isVi = language === 'vi';
   const navItems: { id: ViewMode; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
-    { id: 'chat', label: 'AI Chat', icon: <MessageSquare className="w-5 h-5" /> },
-    { id: 'tasks', label: 'Tasks', icon: <ListTodo className="w-5 h-5" /> },
-    { id: 'coding', label: 'Coding Agent', icon: <Code2 className="w-5 h-5" /> },
-    { id: 'computer', label: 'Computer Control', icon: <Monitor className="w-5 h-5" /> },
-    { id: 'browser', label: 'Browser Agent', icon: <Globe className="w-5 h-5" /> },
-    { id: 'workflows', label: 'Multi-Agent', icon: <Network className="w-5 h-5" /> },
-    { id: 'research', label: 'Research & Docs', icon: <BookOpen className="w-5 h-5" /> },
-    { id: 'business', label: 'Business & Data', icon: <Briefcase className="w-5 h-5" /> },
-    { id: 'runtime', label: '24/7 Runtime', icon: <Server className="w-5 h-5" /> },
-    { id: 'workspace', label: 'Workspace', icon: <FolderTree className="w-5 h-5" /> },
-    { id: 'terminal', label: 'Terminal', icon: <Terminal className="w-5 h-5" /> },
+    { id: 'dashboard', label: isVi ? 'Bảng Điều Khiển' : 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+    { id: 'chat', label: isVi ? 'Trò Chuyện AI' : 'AI Chat', icon: <MessageSquare className="w-5 h-5" /> },
+    { id: 'tasks', label: isVi ? 'Nhiệm Vụ' : 'Tasks', icon: <ListTodo className="w-5 h-5" /> },
+    { id: 'coding', label: isVi ? 'Lập Trình AI' : 'Coding Agent', icon: <Code2 className="w-5 h-5" /> },
+    { id: 'computer', label: isVi ? 'Điều Khiển Máy Tính' : 'Computer Control', icon: <Monitor className="w-5 h-5" /> },
+    { id: 'browser', label: isVi ? 'Trình Duyệt AI' : 'Browser Agent', icon: <Globe className="w-5 h-5" /> },
+    { id: 'workflows', label: isVi ? 'Đa Tác Tử (Workflows)' : 'Multi-Agent', icon: <Network className="w-5 h-5" /> },
+    { id: 'research', label: isVi ? 'Nghiên Cứu & Docs' : 'Research & Docs', icon: <BookOpen className="w-5 h-5" /> },
+    { id: 'business', label: isVi ? 'Kinh Doanh & Dữ Liệu' : 'Business & Data', icon: <Briefcase className="w-5 h-5" /> },
+    { id: 'runtime', label: isVi ? 'Vận Hành 24/7' : '24/7 Runtime', icon: <Server className="w-5 h-5" /> },
+    { id: 'workspace', label: isVi ? 'Tệp Không Gian' : 'Workspace', icon: <FolderTree className="w-5 h-5" /> },
+    { id: 'terminal', label: isVi ? 'Dòng Lệnh Terminal' : 'Terminal', icon: <Terminal className="w-5 h-5" /> },
     {
       id: 'settings',
-      label: 'Settings',
+      label: isVi ? 'Cài Đặt Hệ Thống' : 'Settings',
       icon: <Settings className="w-5 h-5" />,
       badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
     },
@@ -103,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 space-y-2 text-xs">
         <div className="text-slate-400 font-medium mb-1 flex items-center gap-1.5">
           <Activity className="w-3.5 h-3.5 text-slate-400" />
-          System Health
+          {isVi ? 'Trạng Thái Hệ Thống' : 'System Health'}
         </div>
 
         <div className="flex items-center justify-between text-slate-300">
@@ -114,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 runtimeActive ? 'bg-emerald-400 ring-2 ring-emerald-500/20' : 'bg-rose-500'
               }`}
             />
-            {runtimeActive ? 'Active' : 'Offline'}
+            {runtimeActive ? (isVi ? 'Hoạt động' : 'Active') : (isVi ? 'Ngoại tuyến' : 'Offline')}
           </span>
         </div>
 
@@ -126,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 providerConnected ? 'bg-emerald-400 ring-2 ring-emerald-500/20' : 'bg-amber-400'
               }`}
             />
-            {providerConnected ? 'Ready' : 'Config'}
+            {providerConnected ? (isVi ? 'Sẵn sàng' : 'Ready') : (isVi ? 'Cần cấu hình' : 'Config')}
           </span>
         </div>
 
@@ -138,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 mcpConnected ? 'bg-emerald-400 ring-2 ring-emerald-500/20' : 'bg-slate-600'
               }`}
             />
-            {mcpConnected ? 'Connected' : 'Standby'}
+            {mcpConnected ? (isVi ? 'Đã kết nối' : 'Connected') : (isVi ? 'Chờ' : 'Standby')}
           </span>
         </div>
       </div>
