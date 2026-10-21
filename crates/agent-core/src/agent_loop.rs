@@ -90,13 +90,34 @@ impl AgentLoop {
                 tool_calls: None,
                 tool_call_id: None,
             },
-            ChatMessage {
-                role: "user".to_string(),
-                content: Some(user_request.to_string()),
-                tool_calls: None,
-                tool_call_id: None,
-            },
         ];
+
+        // If this task belongs to an active chat conversation, load conversation history!
+        if let Some(conv_id) = task.conversation_id {
+            if let Ok(history) = self.database.get_messages(conv_id).await {
+                // Take the last 15 messages so the agent has full conversational context
+                let start_idx = if history.len() > 15 { history.len() - 15 } else { 0 };
+                for m in &history[start_idx..] {
+                    // Do not duplicate the current prompt if already inserted as user message
+                    if m.content.trim() == user_request.trim() && m.role == "user" {
+                        continue;
+                    }
+                    messages.push(ChatMessage {
+                        role: m.role.clone(),
+                        content: Some(m.content.clone()),
+                        tool_calls: None,
+                        tool_call_id: None,
+                    });
+                }
+            }
+        }
+
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: Some(user_request.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        });
 
         let mut cumulative_usage = ModelUsage {
             prompt_tokens: 0,
@@ -208,9 +229,28 @@ impl AgentLoop {
             }
 
             // 2. Autonomous intent resolver: If step 1 and user explicitly commanded to launch/open an app
-            // but model merely replied with how-to text without calling a tool, execute autonomously!
+            // (or issued a follow-up complaint like "vẫn thế mà", "sao không mở", "chưa mở được" after requesting an app),
+            // and the model merely replied with how-to text without calling a tool, execute autonomously!
             if active_tool_calls.is_empty() && step == 1 {
-                if let Some(app_name) = detect_app_launch_request(user_request) {
+                let mut target_app = detect_app_launch_request(user_request);
+
+                // If not found in current prompt, check if this is a follow-up complaint and inspect previous user prompt in conversation!
+                if target_app.is_none() && is_followup_complaint(user_request) {
+                    if let Some(conv_id) = task.conversation_id {
+                        if let Ok(history) = self.database.get_messages(conv_id).await {
+                            for prev in history.iter().rev() {
+                                if prev.role == "user" && prev.content.trim() != user_request.trim() {
+                                    if let Some(app) = detect_app_launch_request(&prev.content) {
+                                        target_app = Some(app);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(app_name) = target_app {
                     info!("Detected explicit app launch intent for '{app_name}', executing autonomously");
                     active_tool_calls.push(ToolCall {
                         id: format!("call_auto_{}", Uuid::new_v4().simple()),
@@ -520,4 +560,40 @@ pub fn extract_text_tool_calls(content: &str) -> Vec<ToolCall> {
     }
 
     tool_calls
+}
+
+/// Checks if user message is a follow-up complaint or re-prompting action (e.g. "vẫn thế", "chưa mở được")
+pub fn is_followup_complaint(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let trimmed = lower.trim();
+    let patterns = [
+        "vẫn thế",
+        "van the",
+        "vẫn vậy",
+        "van vay",
+        "sao không mở",
+        "sao khong mo",
+        "sao chưa mở",
+        "sao chua mo",
+        "chưa mở",
+        "chua mo",
+        "chưa được",
+        "chua duoc",
+        "không được",
+        "khong duoc",
+        "nó làm được gì",
+        "no lam duoc gi",
+        "có mở được đâu",
+        "co mo duoc dau",
+        "mở đi",
+        "mo di",
+        "làm đi",
+        "lam di",
+        "chạy đi",
+        "chay di",
+        "still the same",
+        "not working",
+        "didn't open",
+    ];
+    patterns.iter().any(|p| trimmed.contains(p))
 }

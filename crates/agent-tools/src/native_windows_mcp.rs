@@ -102,7 +102,15 @@ pub fn resolve_windows_app(name: &str) -> Option<PathBuf> {
     }
 
     let lower = trimmed.to_lowercase();
-    let lower_stem = lower.trim_end_matches(".exe").trim_end_matches(".lnk");
+    let lower_stem = lower
+        .trim_start_matches("app ")
+        .trim_start_matches("ứng dụng ")
+        .trim_start_matches("ung dung ")
+        .trim_start_matches("phần mềm ")
+        .trim_start_matches("phan mem ")
+        .trim_end_matches(".exe")
+        .trim_end_matches(".lnk")
+        .trim();
 
     // 2. Standard Windows system built-in tools
     match lower_stem {
@@ -846,6 +854,25 @@ impl Tool for DesktopAppTool {
                     app_to_launch.to_string()
                 };
 
+                // Fast path: If target_path is an actual .exe file on disk, spawn directly via Win32 CreateProcess
+                let is_direct_exe = target_path.to_lowercase().ends_with(".exe") && PathBuf::from(&target_path).is_file();
+                if is_direct_exe {
+                    if let Ok(child) = hidden_tokio_command(&target_path).spawn() {
+                        let pid = child.id().unwrap_or(0);
+                        return Ok(ToolExecutionResult {
+                            tool_call_id: call_id.to_string(),
+                            tool_name: "desktop_app".to_string(),
+                            stdout: format!("Successfully launched '{app_to_launch}' (PID: {pid}, Path: {target_path})."),
+                            stderr: String::new(),
+                            exit_code: Some(0),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            is_error: false,
+                            truncated: false,
+                        });
+                    }
+                }
+
+                // Fallback to PowerShell Start-Process for shortcuts (.lnk), UWP apps, or system commands
                 let script = format!("Start-Process '{}'", target_path.replace('\'', "''"));
                 let output = hidden_tokio_command("powershell.exe")
                     .args(["-NoProfile", "-NonInteractive", "-Command", &script])

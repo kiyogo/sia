@@ -15,7 +15,8 @@ pub mod tool_router;
 pub mod verifier;
 
 pub use agent_loop::{
-    detect_app_launch_request, extract_text_tool_calls, AgentEvent, AgentLoop,
+    detect_app_launch_request, extract_text_tool_calls, is_followup_complaint, AgentEvent,
+    AgentLoop,
 };
 pub use business::*;
 pub use coding_loop::{CodingMode, CodingWorkflowEngine};
@@ -541,5 +542,12 @@ Please check your screen.
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].function.name, "desktop_app");
         assert!(parsed[0].function.arguments.contains("zalo"));
+
+        // 3. Test follow-up complaints
+        assert!(is_followup_complaint("vẫn thế mà"));
+        assert!(is_followup_complaint("nó làm được gì luôn"));
+        assert!(is_followup_complaint("sao chưa mở được thế"));
+        assert!(is_followup_complaint("mở đi bạn"));
+        assert!(!is_followup_complaint("thời tiết hôm nay thế nào"));
     }
 }
