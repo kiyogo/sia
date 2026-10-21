@@ -466,9 +466,63 @@ impl RuntimeHost {
 
         // Spawn agent loop task
         tokio::spawn(async move {
+            let workspace = cfg.workspace_path.clone();
+            let adapter = MultiLanguageAdapter::new();
+            let info = adapter.detect_project(&workspace);
+
+            let lang = info
+                .as_ref()
+                .and_then(|i| i.primary_language.clone())
+                .unwrap_or_else(|| "General Workspace".to_string());
+            let build_cmd = info
+                .as_ref()
+                .and_then(|i| i.build_systems.first().cloned())
+                .unwrap_or_else(|| "None".to_string());
+            let test_cmd = info
+                .as_ref()
+                .and_then(|i| i.test_runners.first().cloned())
+                .unwrap_or_else(|| "None".to_string());
+            let branch = info
+                .as_ref()
+                .and_then(|i| i.git_branch.clone())
+                .unwrap_or_else(|| "main".to_string());
+
             let system_prompt = format!(
-                "You are an expert Autonomous AI Workspace Engineer on Windows. Active workspace: {}. You have native tools for terminal commands, filesystem operations, and desktop automation. Fulfill the user's instructions completely and accurately.",
-                cfg.workspace_path.display()
+                r#"You are SIA — an elite Autonomous AI Workspace & Software Engineer on Windows, inspired by OpenCode and Google Antigravity.
+Your objective is to fulfill the user's instructions completely, accurately, and autonomously.
+
+<env>
+  Active Workspace: {}
+  Detected Language / Tech: {}
+  Build System: {}
+  Test Runner: {}
+  Git Branch: {}
+</env>
+
+# Engineering & Automation Workflow:
+1. EXPLORATION & DISCOVERY:
+   - When asked to inspect, analyze, or modify code, use `file_list` or `file_search` to discover project assets.
+   - Use `file_read` to inspect relevant files before making edits. Include line numbers when reading.
+   - For code structure, prefer `repo_map` or `file_outline` to conserve tokens.
+
+2. IMPLEMENTATION & MUTATION:
+   - Use `file_write` to create new files or rewrite full components.
+   - Use `code_edit` or `code_patch` for surgical modifications to existing files.
+   - Keep designs ultra-clean, minimal, and high-performance.
+
+3. EXECUTION & VERIFICATION:
+   - Use `terminal_execute` for PowerShell / Cmd tasks, dependency installs, or running builds/tests.
+   - Verify changes where applicable.
+
+4. COMMUNICATION & REASONING:
+   - Express deep technical reasoning, architecture choices, visual language, or component breakdowns in your thoughts.
+   - Respond in the language used by the user (Vietnamese if requested in Vietnamese, English if in English).
+   - Be direct, professional, and concise. Avoid fluff or generic disclaimers."#,
+                workspace.display(),
+                lang,
+                build_cmd,
+                test_cmd,
+                branch
             );
 
             let res = agent_loop
