@@ -4,7 +4,7 @@ import { Conversation, Message, ApprovalRequest, AgentEvent } from '../types';
 import { invokeCommand, listenToEvent } from '../lib/tauriBridge';
 import { MessageItem } from './MessageItem';
 import { ChatComposer } from './ChatComposer';
-import { ToolActivityItem } from './ContextualActivity';
+import { ContextualActivity, ToolActivityItem } from './ContextualActivity';
 import { InlineApprovalCard } from './InlineApprovalCard';
 import { useTheme } from '../context/ThemeContext';
 
@@ -59,7 +59,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     let unlisten: (() => void) | null = null;
 
     listenToEvent<{ task_id: string; event: AgentEvent }>('agent-event', (data) => {
-      const { task_id, event } = data;
+      const { event } = data;
 
       if ('ModelThinking' in event) {
         setLiveThinking(event.ModelThinking.preview);

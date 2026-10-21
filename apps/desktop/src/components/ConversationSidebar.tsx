@@ -9,7 +9,6 @@ import {
   X,
   Settings,
   FolderGit2,
-  ChevronDown,
 } from 'lucide-react';
 import { Conversation } from '../types';
 import { useTheme } from '../context/ThemeContext';

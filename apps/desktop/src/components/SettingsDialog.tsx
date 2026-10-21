@@ -11,13 +11,11 @@ import {
   Loader2,
   Eye,
   EyeOff,
-  Folder,
-  RefreshCw,
   AlertTriangle,
 } from 'lucide-react';
 import { RuntimeConfig, PermissionMode } from '../types';
 import { invokeCommand } from '../lib/tauriBridge';
-import { useTheme, Theme, Language } from '../context/ThemeContext';
+import { useTheme } from '../context/ThemeContext';
 
 interface SettingsDialogProps {
   isOpen: boolean;

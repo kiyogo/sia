@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, User, Bot, Sparkles } from 'lucide-react';
+import { Copy, Check, Sparkles } from 'lucide-react';
 import { Message } from '../types';
 import { CodeBlock } from './CodeBlock';
 import { ContextualActivity, ToolActivityItem } from './ContextualActivity';
