@@ -23,6 +23,9 @@ pub enum PlatformError {
     #[error("Missing system prerequisite: {0}")]
     MissingPrerequisite(String),
 
+    #[error("OS error: {0}")]
+    Os(String),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

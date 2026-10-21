@@ -61,13 +61,23 @@ pub enum WorkflowTaskStatus {
     Ready,
     Assigned,
     Running,
+    Checkpointing,
+    WaitingPermission,
     WaitingApproval,
     WaitingResource,
+    WaitingNetwork,
+    WaitingProvider,
+    WaitingForInteractiveSession,
+    WaitingBudget,
+    Pausing,
+    Paused,
+    Recovering,
     Verifying,
     Completed,
     Failed,
     Cancelled,
     Blocked,
+    OutcomeUnknown,
 }
 
 impl std::fmt::Display for WorkflowTaskStatus {
@@ -77,13 +87,23 @@ impl std::fmt::Display for WorkflowTaskStatus {
             WorkflowTaskStatus::Ready => write!(f, "Ready"),
             WorkflowTaskStatus::Assigned => write!(f, "Assigned"),
             WorkflowTaskStatus::Running => write!(f, "Running"),
+            WorkflowTaskStatus::Checkpointing => write!(f, "Checkpointing"),
+            WorkflowTaskStatus::WaitingPermission => write!(f, "WaitingPermission"),
             WorkflowTaskStatus::WaitingApproval => write!(f, "WaitingApproval"),
             WorkflowTaskStatus::WaitingResource => write!(f, "WaitingResource"),
+            WorkflowTaskStatus::WaitingNetwork => write!(f, "WaitingNetwork"),
+            WorkflowTaskStatus::WaitingProvider => write!(f, "WaitingProvider"),
+            WorkflowTaskStatus::WaitingForInteractiveSession => write!(f, "WaitingForInteractiveSession"),
+            WorkflowTaskStatus::WaitingBudget => write!(f, "WaitingBudget"),
+            WorkflowTaskStatus::Pausing => write!(f, "Pausing"),
+            WorkflowTaskStatus::Paused => write!(f, "Paused"),
+            WorkflowTaskStatus::Recovering => write!(f, "Recovering"),
             WorkflowTaskStatus::Verifying => write!(f, "Verifying"),
             WorkflowTaskStatus::Completed => write!(f, "Completed"),
             WorkflowTaskStatus::Failed => write!(f, "Failed"),
             WorkflowTaskStatus::Cancelled => write!(f, "Cancelled"),
             WorkflowTaskStatus::Blocked => write!(f, "Blocked"),
+            WorkflowTaskStatus::OutcomeUnknown => write!(f, "OutcomeUnknown"),
         }
     }
 }
@@ -96,13 +116,23 @@ impl std::str::FromStr for WorkflowTaskStatus {
             "Ready" => Ok(WorkflowTaskStatus::Ready),
             "Assigned" => Ok(WorkflowTaskStatus::Assigned),
             "Running" => Ok(WorkflowTaskStatus::Running),
+            "Checkpointing" => Ok(WorkflowTaskStatus::Checkpointing),
+            "WaitingPermission" => Ok(WorkflowTaskStatus::WaitingPermission),
             "WaitingApproval" => Ok(WorkflowTaskStatus::WaitingApproval),
             "WaitingResource" => Ok(WorkflowTaskStatus::WaitingResource),
+            "WaitingNetwork" => Ok(WorkflowTaskStatus::WaitingNetwork),
+            "WaitingProvider" => Ok(WorkflowTaskStatus::WaitingProvider),
+            "WaitingForInteractiveSession" => Ok(WorkflowTaskStatus::WaitingForInteractiveSession),
+            "WaitingBudget" => Ok(WorkflowTaskStatus::WaitingBudget),
+            "Pausing" => Ok(WorkflowTaskStatus::Pausing),
+            "Paused" => Ok(WorkflowTaskStatus::Paused),
+            "Recovering" => Ok(WorkflowTaskStatus::Recovering),
             "Verifying" => Ok(WorkflowTaskStatus::Verifying),
             "Completed" => Ok(WorkflowTaskStatus::Completed),
             "Failed" => Ok(WorkflowTaskStatus::Failed),
             "Cancelled" => Ok(WorkflowTaskStatus::Cancelled),
             "Blocked" => Ok(WorkflowTaskStatus::Blocked),
+            "OutcomeUnknown" => Ok(WorkflowTaskStatus::OutcomeUnknown),
             _ => Ok(WorkflowTaskStatus::Pending),
         }
     }
@@ -466,6 +496,81 @@ impl Database {
             list.push(r?);
         }
         Ok(list)
+    }
+
+    pub async fn list_all_in_flight_tasks(&self) -> StorageResult<Vec<WorkflowTask>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            r#"SELECT id, workflow_id, parent_task_id, title, description, assigned_agent,
+                      status, priority, inputs_json, outputs_json, acceptance_criteria,
+                      retry_count, max_retries, timeout_secs, started_at, completed_at, error
+               FROM workflow_tasks
+               WHERE status IN ('Running', 'Assigned', 'Checkpointing', 'Recovering')
+               ORDER BY started_at ASC"#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let id_str: String = row.get(0)?;
+            let wf_id_str: String = row.get(1)?;
+            let parent_id_str: Option<String> = row.get(2)?;
+            let title: String = row.get(3)?;
+            let description: String = row.get(4)?;
+            let assigned_agent: String = row.get(5)?;
+            let status_str: String = row.get(6)?;
+            let priority: i32 = row.get(7)?;
+            let inputs_json: String = row.get(8)?;
+            let outputs_json: String = row.get(9)?;
+            let acceptance_criteria: String = row.get(10)?;
+            let retry_count: u32 = row.get(11)?;
+            let max_retries: u32 = row.get(12)?;
+            let timeout_secs: i64 = row.get(13)?;
+            let started_at_str: Option<String> = row.get(14)?;
+            let completed_at_str: Option<String> = row.get(15)?;
+            let error: Option<String> = row.get(16)?;
+
+            Ok(WorkflowTask {
+                id: Uuid::parse_str(&id_str).unwrap_or_default(),
+                workflow_id: Uuid::parse_str(&wf_id_str).unwrap_or_default(),
+                parent_task_id: parent_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
+                title,
+                description,
+                assigned_agent,
+                status: status_str.parse().unwrap_or(WorkflowTaskStatus::Pending),
+                priority,
+                inputs_json,
+                outputs_json,
+                acceptance_criteria,
+                retry_count,
+                max_retries,
+                timeout_secs: timeout_secs as u64,
+                started_at: started_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+                completed_at: completed_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+                error,
+            })
+        })?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub async fn update_workflow_task(&self, task: &WorkflowTask) -> StorageResult<()> {
+        let conn = self.conn.lock().await;
+        conn.execute(
+            r#"UPDATE workflow_tasks
+               SET status = ?1, retry_count = ?2, error = ?3, completed_at = ?4, outputs_json = ?5
+               WHERE id = ?6"#,
+            params![
+                task.status.to_string(),
+                task.retry_count,
+                task.error,
+                task.completed_at.map(|t| t.to_rfc3339()),
+                task.outputs_json,
+                task.id.to_string(),
+            ],
+        )?;
+        Ok(())
     }
 
     pub async fn update_workflow_task_status(

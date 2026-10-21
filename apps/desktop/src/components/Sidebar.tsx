@@ -12,6 +12,7 @@ import {
   Network,
   BookOpen,
   Briefcase,
+  Server,
   Settings,
   Activity,
   Cpu,
@@ -44,6 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'workflows', label: 'Multi-Agent', icon: <Network className="w-5 h-5" /> },
     { id: 'research', label: 'Research & Docs', icon: <BookOpen className="w-5 h-5" /> },
     { id: 'business', label: 'Business & Data', icon: <Briefcase className="w-5 h-5" /> },
+    { id: 'runtime', label: '24/7 Runtime', icon: <Server className="w-5 h-5" /> },
     { id: 'workspace', label: 'Workspace', icon: <FolderTree className="w-5 h-5" /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal className="w-5 h-5" /> },
     {

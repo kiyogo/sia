@@ -13,6 +13,9 @@ pub use workflow_store::*;
 pub mod business_store;
 pub use business_store::*;
 
+pub mod runtime_store;
+pub use runtime_store::*;
+
 #[derive(Error, Debug)]
 pub enum StorageError {
     #[error("Database error: {0}")]
@@ -395,6 +398,74 @@ impl Database {
                 resolved_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS scheduled_jobs (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                schedule_type TEXT NOT NULL,
+                cron_expression TEXT,
+                interval_seconds INTEGER,
+                timezone TEXT NOT NULL DEFAULT 'UTC',
+                next_run_at TEXT,
+                last_run_at TEXT,
+                status TEXT NOT NULL DEFAULT 'Active',
+                missed_run_policy TEXT NOT NULL DEFAULT 'Skip',
+                overlap_policy TEXT NOT NULL DEFAULT 'Skip',
+                max_runtime_seconds INTEGER,
+                budget_limit REAL,
+                workflow_template TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS job_executions (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                workflow_id TEXT,
+                scheduled_for TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                status TEXT NOT NULL,
+                exit_reason TEXT,
+                FOREIGN KEY (job_id) REFERENCES scheduled_jobs(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS supervised_processes (
+                id TEXT PRIMARY KEY,
+                process_id INTEGER NOT NULL,
+                process_type TEXT NOT NULL,
+                workspace_path TEXT NOT NULL,
+                task_id TEXT,
+                start_time TEXT NOT NULL,
+                last_heartbeat TEXT NOT NULL,
+                exit_code INTEGER,
+                health_status TEXT NOT NULL,
+                restart_count INTEGER NOT NULL DEFAULT 0,
+                resource_usage_json TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS budget_reservations (
+                id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                reserved_tokens INTEGER NOT NULL,
+                reserved_cost REAL NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS runtime_events (
+                id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                correlation_id TEXT NOT NULL,
+                workflow_id TEXT,
+                task_id TEXT,
+                worker_id TEXT,
+                payload_json TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON checkpoints(task_id);
@@ -406,6 +477,12 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_evidence_source ON evidence_items(source_id);
             CREATE INDEX IF NOT EXISTS idx_email_drafts_op ON email_drafts(operation_id);
             CREATE INDEX IF NOT EXISTS idx_approvals_status ON business_approvals(status);
+            CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_status ON scheduled_jobs(status, next_run_at);
+            CREATE INDEX IF NOT EXISTS idx_job_executions_job ON job_executions(job_id);
+            CREATE INDEX IF NOT EXISTS idx_supervised_processes_status ON supervised_processes(health_status);
+            CREATE INDEX IF NOT EXISTS idx_budget_reservations_entity ON budget_reservations(entity_type, entity_id, status);
+            CREATE INDEX IF NOT EXISTS idx_runtime_events_corr ON runtime_events(correlation_id);
+            CREATE INDEX IF NOT EXISTS idx_runtime_events_time ON runtime_events(timestamp);
             "#,
         )?;
         Ok(())
@@ -1006,5 +1083,125 @@ mod tests {
             .expect("resolve approval");
         let remaining_pending = db.list_pending_approvals().await.expect("list remaining");
         assert_eq!(remaining_pending.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_runtime_and_resilience_storage() {
+        let db = Database::open_in_memory().expect("open in-memory db");
+
+        // 1. Scheduled Job
+        let job_id = Uuid::new_v4();
+        let job = ScheduledJob {
+            id: job_id,
+            name: "Hourly Market Watch".to_string(),
+            schedule_type: "interval".to_string(),
+            cron_expression: None,
+            interval_seconds: Some(3600),
+            timezone: "UTC".to_string(),
+            next_run_at: Some(Utc::now() + chrono::Duration::hours(1)),
+            last_run_at: None,
+            status: "Active".to_string(),
+            missed_run_policy: "Skip".to_string(),
+            overlap_policy: "Skip".to_string(),
+            max_runtime_seconds: Some(300),
+            budget_limit: Some(10.0),
+            workflow_template: "market_research".to_string(),
+            payload_json: "{}".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        db.create_scheduled_job(&job).await.expect("create job");
+        let fetched_job = db.get_scheduled_job(job_id).await.expect("get job");
+        assert!(fetched_job.is_some());
+        assert_eq!(fetched_job.unwrap().name, "Hourly Market Watch");
+
+        let jobs = db.list_scheduled_jobs().await.expect("list jobs");
+        assert_eq!(jobs.len(), 1);
+
+        // 2. Job Execution
+        let exec_id = Uuid::new_v4();
+        let exec = JobExecution {
+            id: exec_id,
+            job_id,
+            workflow_id: None,
+            scheduled_for: Utc::now(),
+            started_at: Utc::now(),
+            completed_at: None,
+            status: "Running".to_string(),
+            exit_reason: None,
+        };
+        db.record_job_execution(&exec).await.expect("record execution");
+        db.update_job_execution_status(exec_id, "Completed", Some(Utc::now()), Some("Success"))
+            .await
+            .expect("update exec status");
+
+        // 3. Supervised Process
+        let proc_id = Uuid::new_v4();
+        let proc = SupervisedProcess {
+            id: proc_id,
+            process_id: 12345,
+            process_type: "WindowsMcp".to_string(),
+            workspace_path: "C:\\Workspace".to_string(),
+            task_id: None,
+            start_time: Utc::now(),
+            last_heartbeat: Utc::now(),
+            exit_code: None,
+            health_status: "Healthy".to_string(),
+            restart_count: 0,
+            resource_usage_json: Some(r#"{"cpu":1.5,"memory_mb":45}"#.to_string()),
+        };
+        db.register_supervised_process(&proc).await.expect("register proc");
+        db.update_process_heartbeat(proc_id, "Healthy", Some(r#"{"cpu":2.0,"memory_mb":50}"#.into()))
+            .await
+            .expect("update hb");
+        let procs = db.list_supervised_processes().await.expect("list procs");
+        assert_eq!(procs.len(), 1);
+        assert_eq!(procs[0].health_status, "Healthy");
+
+        // 4. Budget Reservations
+        let res_id = Uuid::new_v4();
+        let reservation = BudgetReservation {
+            id: res_id,
+            entity_type: "Workflow".to_string(),
+            entity_id: "wf_test_1".to_string(),
+            reserved_tokens: 5000,
+            reserved_cost: 0.05,
+            status: "Pending".to_string(),
+            created_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::minutes(5),
+        };
+        db.create_budget_reservation(&reservation).await.expect("create reservation");
+        let reserved = db.get_active_reserved_tokens("Workflow", "wf_test_1").await.expect("get reserved");
+        assert_eq!(reserved, 5000);
+
+        db.resolve_budget_reservation(res_id, "Committed").await.expect("resolve res");
+        let reserved_after = db.get_active_reserved_tokens("Workflow", "wf_test_1").await.expect("get reserved after");
+        assert_eq!(reserved_after, 0);
+
+        // 5. Runtime Event Journal
+        let event = RuntimeEventRecord {
+            id: Uuid::new_v4(),
+            event_type: "TaskClaimed".to_string(),
+            correlation_id: "corr_9988".to_string(),
+            workflow_id: None,
+            task_id: None,
+            worker_id: Some("worker_01".to_string()),
+            payload_json: r#"{"status":"assigned"}"#.to_string(),
+            timestamp: Utc::now(),
+        };
+        db.record_runtime_event(&event).await.expect("record event");
+        let events = db.list_runtime_events(10).await.expect("list events");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "TaskClaimed");
+
+        // 6. Online SQLite Backup
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let backup_file = temp_dir.path().join("backup.db");
+        db.backup_to(&backup_file).await.expect("backup to disk");
+        assert!(backup_file.exists());
+        let backup_db = Database::open(&backup_file).expect("open backup");
+        let backup_jobs = backup_db.list_scheduled_jobs().await.expect("list backup jobs");
+        assert_eq!(backup_jobs.len(), 1);
+        assert_eq!(backup_jobs[0].name, "Hourly Market Watch");
     }
 }

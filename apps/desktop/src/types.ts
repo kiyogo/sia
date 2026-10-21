@@ -1,4 +1,4 @@
-export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'coding' | 'computer' | 'browser' | 'workflows' | 'business' | 'research' | 'workspace' | 'terminal' | 'settings';
+export type ViewMode = 'dashboard' | 'chat' | 'tasks' | 'coding' | 'computer' | 'browser' | 'workflows' | 'business' | 'research' | 'runtime' | 'workspace' | 'terminal' | 'settings';
 
 export type CodingMode = 'Ask' | 'Plan' | 'Build';
 
@@ -355,4 +355,57 @@ export interface ColumnSummaryDto {
   min: number;
   max: number;
   std_dev: number;
+}
+
+export interface ScheduledJobDto {
+  id: string;
+  name: string;
+  schedule_type: string;
+  cron_expression?: string;
+  interval_seconds?: number;
+  timezone: string;
+  next_run_at?: string;
+  last_run_at?: string;
+  status: 'Active' | 'Paused' | 'Disabled';
+  missed_run_policy: 'Skip' | 'RunOnce' | 'CatchUp' | 'RequireApproval';
+  overlap_policy: 'Skip' | 'Queue' | 'Replace' | 'RunConcurrently';
+  max_runtime_seconds?: number;
+  budget_limit?: number;
+  workflow_template: string;
+  payload_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupervisedProcessDto {
+  id: string;
+  process_id: number;
+  process_type: string;
+  workspace_path: string;
+  task_id?: string;
+  start_time: string;
+  last_heartbeat: string;
+  exit_code?: number;
+  health_status: 'Healthy' | 'Unresponsive' | 'Crashed' | 'Terminated' | 'Quarantined';
+  restart_count: number;
+  resource_usage_json?: string;
+}
+
+export interface SystemResourceSnapshotDto {
+  cpu_usage_percent: number;
+  memory_used_mb: number;
+  memory_total_mb: number;
+  memory_free_mb: number;
+  memory_used_percent: number;
+  disk_free_gb: number;
+  process_count: number;
+  timestamp: string;
+}
+
+export interface BudgetStatusDto {
+  daily_spent: number;
+  active_reserved: number;
+  daily_limit: number;
+  monthly_limit: number;
+  is_under_budget: boolean;
 }

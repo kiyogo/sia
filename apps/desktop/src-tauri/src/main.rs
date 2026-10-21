@@ -2,8 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use agent_platform::{
-    ComputerControlAdapter, OperatingSystemAdapter, ProcessOutput, WindowsComputerControlAdapter,
-    WindowsOperatingSystemAdapter,
+    ComputerControlAdapter, OperatingSystemAdapter, ProcessOutput, RuntimeServiceAdapter,
+    WindowsComputerControlAdapter, WindowsOperatingSystemAdapter,
 };
 use agent_security::{ApprovalRequest, PermissionTier};
 use agent_storage::{Checkpoint, Conversation, Message, Task};
@@ -539,6 +539,189 @@ async fn set_agent_concurrency(
     Ok(reg.set_concurrency(&agent_id, limit))
 }
 
+// -----------------------------------------------------------------------------
+// Phase 6: 24/7 Runtime Service, Scheduler & Watchdog IPC
+// -----------------------------------------------------------------------------
+
+#[tauri::command]
+async fn get_service_status(state: State<'_, AppState>) -> Result<String, String> {
+    let status = state.host.service().get_status().await;
+    Ok(status.to_string())
+}
+
+#[tauri::command]
+async fn install_windows_service(
+    service_name: Option<String>,
+    display_name: Option<String>,
+) -> Result<String, String> {
+    let name = service_name.unwrap_or_else(|| "AutonomousAiWorkspaceService".to_string());
+    let disp = display_name.unwrap_or_else(|| "Autonomous AI Workspace 24/7 Runtime".to_string());
+    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+
+    #[cfg(windows)]
+    {
+        let adapter = agent_platform::WindowsServiceAdapter::new();
+        adapter
+            .install(&name, &disp, &current_exe, agent_platform::ServiceStartupType::AutoStart)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(format!("Installed Windows service '{}'", name))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(format!("Mock service '{}' installed", name))
+    }
+}
+
+#[tauri::command]
+async fn start_windows_service(service_name: Option<String>, state: State<'_, AppState>) -> Result<String, String> {
+    let name = service_name.unwrap_or_else(|| "AutonomousAiWorkspaceService".to_string());
+    let _ = state.host.service().start().await;
+    Ok(format!("Service '{}' started", name))
+}
+
+#[tauri::command]
+async fn stop_windows_service(service_name: Option<String>, state: State<'_, AppState>) -> Result<String, String> {
+    let name = service_name.unwrap_or_else(|| "AutonomousAiWorkspaceService".to_string());
+    state.host.service().stop().await;
+    Ok(format!("Service '{}' stopped", name))
+}
+
+#[tauri::command]
+async fn restart_windows_service(service_name: Option<String>, state: State<'_, AppState>) -> Result<String, String> {
+    let name = service_name.unwrap_or_else(|| "AutonomousAiWorkspaceService".to_string());
+    state.host.service().stop().await;
+    let _ = state.host.service().start().await;
+    Ok(format!("Service '{}' restarted", name))
+}
+
+#[tauri::command]
+async fn list_scheduled_jobs(state: State<'_, AppState>) -> Result<Vec<agent_storage::ScheduledJob>, String> {
+    state.host.database().list_scheduled_jobs().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_scheduled_job(
+    name: String,
+    schedule_type: String,
+    interval_seconds: Option<i64>,
+    cron_expression: Option<String>,
+    workflow_template: String,
+    payload_json: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+    let next_run = match schedule_type.as_str() {
+        "interval" => Some(now + chrono::Duration::seconds(interval_seconds.unwrap_or(3600))),
+        "daily" => Some(now + chrono::Duration::days(1)),
+        _ => Some(now + chrono::Duration::seconds(interval_seconds.unwrap_or(3600))),
+    };
+
+    let job = agent_storage::ScheduledJob {
+        id,
+        name,
+        schedule_type,
+        cron_expression,
+        interval_seconds,
+        timezone: "UTC".to_string(),
+        next_run_at: next_run,
+        last_run_at: None,
+        status: "Active".to_string(),
+        missed_run_policy: "Skip".to_string(),
+        overlap_policy: "Skip".to_string(),
+        max_runtime_seconds: Some(600),
+        budget_limit: Some(5.0),
+        workflow_template,
+        payload_json: payload_json.unwrap_or_else(|| "{}".to_string()),
+        created_at: now,
+        updated_at: now,
+    };
+
+    state.host.database().create_scheduled_job(&job).await.map_err(|e| e.to_string())?;
+    Ok(id.to_string())
+}
+
+#[tauri::command]
+async fn set_scheduled_job_status(
+    job_id: String,
+    status: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let id = Uuid::parse_str(&job_id).map_err(|e| e.to_string())?;
+    state.host.database().set_scheduled_job_status(id, &status).await.map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn trigger_scheduled_job_now(state: State<'_, AppState>) -> Result<Vec<agent_runtime::TriggeredJobInfo>, String> {
+    state.host.service().scheduler().evaluate_and_trigger_due_jobs().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_supervised_processes(state: State<'_, AppState>) -> Result<Vec<agent_storage::SupervisedProcess>, String> {
+    state.host.database().list_supervised_processes().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn kill_supervised_process(process_uuid: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let id = Uuid::parse_str(&process_uuid).map_err(|e| e.to_string())?;
+    Ok(state.host.service().watchdog().kill_process_tree(id).await)
+}
+
+#[tauri::command]
+async fn reconcile_unknown_task(
+    task_id: String,
+    decision_type: String, // "retry", "complete", "cancel"
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let id = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
+    let decision = match decision_type.to_lowercase().as_str() {
+        "retry" => agent_runtime::UnknownReconciliationDecision::RetrySafeStep,
+        "complete" => agent_runtime::UnknownReconciliationDecision::MarkCompleted,
+        _ => agent_runtime::UnknownReconciliationDecision::Cancel,
+    };
+    state.host.service().recovery().reconcile_unknown_outcome(id, decision).await.map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn get_system_resource_snapshot(state: State<'_, AppState>) -> Result<agent_platform::SystemResourceSnapshot, String> {
+    Ok(state.host.service().get_resource_snapshot())
+}
+
+#[tauri::command]
+async fn get_budget_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let daily_spent = state.host.service().budget().get_daily_spent().await;
+    let active_reserved = state.host.service().budget().get_active_reserved_sum().await;
+    Ok(json!({
+        "daily_spent": daily_spent,
+        "active_reserved": active_reserved,
+        "daily_limit": 25.0,
+        "monthly_limit": 200.0,
+        "is_under_budget": (daily_spent + active_reserved) < 25.0
+    }))
+}
+
+#[tauri::command]
+async fn backup_database_now(custom_path: Option<String>, state: State<'_, AppState>) -> Result<String, String> {
+    let target = if let Some(p) = custom_path {
+        PathBuf::from(p)
+    } else {
+        let app_dir = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("AutonomousAiWorkspace")
+            .join("backups");
+        let _ = std::fs::create_dir_all(&app_dir);
+        let filename = format!("workspace_backup_{}.db", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+        app_dir.join(filename)
+    };
+
+    state.host.database().backup_to(&target).await.map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -644,7 +827,22 @@ async fn main() {
             list_workflow_artifacts,
             list_registered_agents,
             toggle_agent_status,
-            set_agent_concurrency
+            set_agent_concurrency,
+            get_service_status,
+            install_windows_service,
+            start_windows_service,
+            stop_windows_service,
+            restart_windows_service,
+            list_scheduled_jobs,
+            create_scheduled_job,
+            set_scheduled_job_status,
+            trigger_scheduled_job_now,
+            list_supervised_processes,
+            kill_supervised_process,
+            reconcile_unknown_task,
+            get_system_resource_snapshot,
+            get_budget_status,
+            backup_database_now
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

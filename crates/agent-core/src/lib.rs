@@ -5,9 +5,11 @@ pub mod data;
 pub mod diagnostics;
 pub mod document;
 pub mod error;
+pub mod governance;
 pub mod model;
 pub mod orchestration;
 pub mod research;
+pub mod resilience;
 pub mod token_optimizer;
 pub mod tool_router;
 pub mod verifier;
@@ -19,12 +21,14 @@ pub use data::*;
 pub use diagnostics::{deduplicate_diagnostics, DeduplicatedDiagnostics};
 pub use document::*;
 pub use error::{CoreError, CoreResult};
+pub use governance::budget::{BudgetGovernanceEngine, BudgetHierarchyConfig, ReservationReceipt};
 pub use model::{
     ChatMessage, FunctionCall, MockModelProvider, ModelProvider, ModelRequest, ModelResponse,
     ModelUsage, OpenAiCompatibleProvider, ToolCall,
 };
 pub use orchestration::*;
 pub use research::*;
+pub use resilience::*;
 pub use token_optimizer::{ContextBudgetConfig, TokenOptimizer};
 pub use tool_router::{TaskStrategy, ToolStrategyRouter, ToolTier};
 pub use verifier::{ActionVerifier, VerificationOutcome, VerifyCondition};
@@ -463,5 +467,52 @@ Services,9200,22
             .await;
         assert!(dup.is_err());
         assert!(dup.unwrap_err().contains("Duplicate send prevented"));
+    }
+
+    #[tokio::test]
+    async fn test_budget_governance_and_resilience() {
+        // 1. Budget Governance & Pre-Request Reservation
+        let config = BudgetHierarchyConfig {
+            global_daily_cost_limit: 1.0,
+            global_monthly_cost_limit: 20.0,
+            default_workflow_cost_limit: 0.5,
+            default_task_cost_limit: 0.1,
+        };
+        let engine = BudgetGovernanceEngine::new(config);
+
+        // First reservation succeeds
+        let receipt1 = engine.reserve("Workflow", "wf_test", 1000, 0.3).await.expect("reserve 1");
+        assert_eq!(receipt1.reserved_cost, 0.3);
+
+        // Second reservation that exceeds workflow limit (0.3 + 0.3 > 0.5) must fail
+        let exceeded = engine.reserve("Workflow", "wf_test", 1000, 0.3).await;
+        assert!(exceeded.is_err());
+        assert!(exceeded.unwrap_err().contains("Workflow budget exceeded"));
+
+        // Reconcile first receipt with actual cost of 0.25
+        engine.reconcile(&receipt1, 950, 0.25).await;
+        assert_eq!(engine.get_daily_spent().await, 0.25);
+        assert_eq!(engine.get_active_reserved_sum().await, 0.0);
+
+        // 2. Error Classifier
+        assert_eq!(ErrorClassifier::classify(Some(429), "rate limit exceeded", false), ErrorClass::Transient);
+        assert_eq!(ErrorClassifier::classify(Some(401), "invalid api key", false), ErrorClass::Permanent);
+        assert_eq!(ErrorClassifier::classify(None, "user approval required for action", false), ErrorClass::UserActionRequired);
+        assert_eq!(ErrorClassifier::classify(None, "out of memory: cannot allocate 4GB", false), ErrorClass::Resource);
+        assert_eq!(ErrorClassifier::classify(None, "connection reset by peer", true), ErrorClass::UnknownOutcome);
+
+        // 3. Circuit Breaker
+        let cb = CircuitBreaker::new(3, 10);
+        assert!(cb.can_execute());
+        cb.record_failure();
+        cb.record_failure();
+        assert!(cb.can_execute());
+        cb.record_failure();
+        // 3 failures triggers Open
+        assert!(!cb.can_execute());
+        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_success();
+        assert!(cb.can_execute());
+        assert_eq!(cb.state(), CircuitState::Closed);
     }
 }

@@ -15,8 +15,8 @@ Write-Host "==========================================================" -Foregro
 Write-Host "`n[1/3] Running Rust Workspace Unit Tests..." -ForegroundColor Yellow
 cargo test --workspace --lib
 
-# 2. Run Acceptance Test Suite across all phases (Phase 1, 2, 3, 4, 5)
-Write-Host "`n[2/3] Running Acceptance Scenarios (Phase 1, 2, 3, 4, 5)..." -ForegroundColor Yellow
+# 2. Run Acceptance Test Suite across all phases (Phase 1, 2, 3, 4, 5, 6)
+Write-Host "`n[2/3] Running Acceptance Scenarios (Phase 1, 2, 3, 4, 5, 6)..." -ForegroundColor Yellow
 cargo test --workspace --tests
 
 # 3. Test Frontend TypeScript compilation & Vite build

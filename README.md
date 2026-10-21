@@ -1,7 +1,7 @@
 # Universal Autonomous AI Workspace
 ### Windows-First, Cross-Platform-Ready, Open-Source-First Desktop Agent Platform
 
-An autonomous, multi-purpose AI Workspace designed to perform real work on Windows. The platform bridges natural language instructions from users with native system capabilities: executing terminal commands in CMD/PowerShell, analyzing and modifying codebases across multiple languages, controlling Windows applications, navigating modern web browsers via Playwright MCP, orchestrating complex Multi-Agent Task DAGs, conducting systematic evidence-grounded research, processing multi-format documents, performing deterministic data analytics with responsive vector charts, and automating business communications through an approval-gated email and calendar engine.
+An autonomous, multi-purpose AI Workspace designed to perform real work on Windows. The platform bridges natural language instructions from users with native system capabilities: executing continuous 24/7 background automations as a Windows Service, recovering reliably from software crashes and power interruptions, scheduling recurring and cron-driven workflows, executing terminal commands in CMD/PowerShell, analyzing and modifying codebases across multiple languages, controlling Windows applications, navigating modern web browsers via Playwright MCP, orchestrating complex Multi-Agent Task DAGs, conducting systematic evidence-grounded research, processing multi-format documents, performing deterministic data analytics with responsive vector charts, and automating business communications through an approval-gated email and calendar engine.
 
 ---
 
@@ -13,19 +13,19 @@ The application is structured as a multi-crate Rust workspace with a desktop UI 
 aai/
 ├── apps/
 │   └── desktop/                  # Tauri 2 + React + TypeScript + Tailwind UI
-│       ├── src/                  # React UI (ResearchWorkspace, BusinessDashboard, WorkflowOrchestrator, ComputerControl, BrowserWorkspace, CodingWorkspace, Chat, Tasks, Terminal)
+│       ├── src/                  # React UI (RuntimeControlCenter, ResearchWorkspace, BusinessDashboard, WorkflowOrchestrator, ComputerControl, BrowserWorkspace, CodingWorkspace, Chat, Tasks, Terminal)
 │       └── src-tauri/            # Tauri 2 host binary & IPC command handlers
 ├── crates/
-│   ├── agent-platform/           # OS-agnostic traits, Win32 adapters, generic stubs & MultiLanguageAdapter
+│   ├── agent-platform/           # SCM Service Adapter, InteractiveSessionProvider, SystemResourceMonitor, Win32 adapters & MultiLanguageAdapter
 │   ├── agent-security/           # Permission tiers, DataClassification, SecretRedactor, PromptInjectionDefense, DesktopOwnershipManager
-│   ├── agent-storage/            # SQLite embedded database with WAL mode, schema migrations, WorkflowStore & BusinessStore
+│   ├── agent-storage/            # SQLite embedded database with WAL mode, online backup API, RuntimeStore, WorkflowStore & BusinessStore
 │   ├── agent-tools/              # Browser MCP, Windows MCP, Git, OpenCode code_edit/patch, search, repo_map
-│   ├── agent-core/               # Research Engine, Document Intelligence, Data Analysis & SVG Charts, Business Connectors, Task DAG, Tool Router
-│   └── agent-runtime/            # Business Coordinator, Supervisor engine, Worker dispatcher, Workflow scheduler, task runner, and recovery engine
-├── docs/                         # Comprehensive architecture, multi-agent, business automation, research, security, and QA reports
-├── scripts/                      # PowerShell setup, dev, test, and release build automation scripts
+│   ├── agent-core/               # BudgetGovernanceEngine, ErrorClassifier, CircuitBreaker, Research Engine, Document Intelligence, Data Analysis
+│   └── agent-runtime/            # AgentRuntimeService, AutonomousScheduler, ProcessSupervisor (Watchdog), CrashRecoveryEngine, InteractiveWorker
+├── docs/                         # Comprehensive architecture, 24/7 runtime, multi-agent, business automation, research, security, and QA reports
+├── scripts/                      # PowerShell setup, service management, backup/restore, test, and release build automation scripts
 ├── LICENSE                       # MIT License
-├── THIRD_PARTY_NOTICES.md        # Open-source attributions (Playwright, Windows-MCP, OpenCode, Tauri, Zip, etc.)
+├── THIRD_PARTY_NOTICES.md        # Open-source attributions (Playwright, Windows-MCP, OpenCode, Tauri, windows-service, sysinfo, Zip, etc.)
 └── README.md
 ```
 
@@ -33,7 +33,36 @@ aai/
 
 ## 2. Core Capabilities Across Phases
 
-### 2.1 Phase 5: Advanced Business & Research Automation
+### 2.1 Phase 6: Autonomous 24/7 Runtime & Self-Recovery System
+1. **Three-Layer Decoupled Architecture**:
+   - **Layer 1 (Background Service)**: `AgentRuntimeService` running independently of the desktop GUI, managing durable job scheduling, process supervision, and recovery.
+   - **Layer 2 (Interactive Worker)**: `WindowsInteractiveWorker` bridging desktop GUI automation to Session 1+, with automatic deferral (`WaitingForInteractiveSession`) when running in Session 0 or when the workstation is locked (`logonui.exe`).
+   - **Layer 3 (Desktop UI)**: `RuntimeControlCenter.tsx` providing real-time SCM service lifecycle management, scheduler inspection, watchdog tables, and crash recovery reconciliation.
+2. **Windows Service Control Manager (SCM) Integration**:
+   - Native Windows service lifecycle (Install, Start, Stop, Restart, Status, Uninstall) via `windows-service` (0.8).
+   - Automated SCM recovery policies (`restart/60000/restart/60000/restart/60000`).
+   - Automated PowerShell service control scripts in `scripts/`.
+3. **Durable Execution Engine & Startup Crash Recovery**:
+   - SQLite WAL persistence with monotonic fencing tokens (`retry_count`) eliminating stale worker races.
+   - Deterministic startup reconciliation: pure idempotent tasks safely reset to `Ready`, while tasks with external side effects (e.g. emails, commits, payments) are held in `OutcomeUnknown` preventing duplicate executions.
+   - Manual human operator reconciliation queue supporting `RetrySafeStep`, `MarkCompleted`, or `Cancel`.
+4. **Autonomous Scheduler & Missed-Run Policies**:
+   - Interval, daily, weekly, and cron-driven job execution.
+   - Missed-run policies (`Skip` preventing backlog floods; `RunOnce` for reliable catch-up).
+   - Overlapping job concurrency protection (`JobConcurrencyPolicy::Skip`).
+5. **Process Supervision & Watchdog**:
+   - Child process monitoring with heartbeat tracking.
+   - Crash loop circuit breaker: automatically quarantines processes exceeding 3 crashes within 60 seconds (`ProcessStatus::Quarantined`).
+   - Clean process tree termination via `taskkill /T /F`.
+6. **Hardware Resource Monitoring & Memory Backpressure**:
+   - Real-time CPU, RAM, and free disk sampling via `sysinfo` (0.33).
+   - Automated memory backpressure pausing non-essential tasks when utilization exceeds 90%.
+   - Disk space exhaustion warnings (< 5GB warning; < 1GB critical).
+7. **Budget Governance & Online Backups**:
+   - Pre-request token and monetary reservations eliminating concurrent multi-worker budget overruns.
+   - Native online SQLite Backup API (`rusqlite::backup::Backup`) with non-blocking snapshots and verified restoration.
+
+### 2.2 Phase 5: Advanced Business & Research Automation
 1. **Research Agent & Provenance Engine**:
    - Systematic web and local workspace research querying `LocalWorkspaceSearchProvider` and external search adapters.
    - Source provenance tracking with computed SHA-256 integrity digests, HTTP etags, and credibility scoring.
@@ -130,44 +159,55 @@ The output binary will be created at: `target\release\desktop.exe`.
 
 ---
 
-## 5. Acceptance Test Verification (121 / 121 Passed)
+## 5. Acceptance Test Verification (160 / 160 Passed)
 
-### Phase 5 Acceptance Tests (24 / 24 Passed)
+### Phase 6 Acceptance Tests (34 / 34 Passed)
 | Test Identifier | Capability Tested | Status |
 | :--- | :--- | :--- |
-| `test_01_sqlite_business_store_schema` | SQLite `business_store` schema creation, tables, and indices | **PASS** |
-| `test_02_research_source_provenance_and_hash` | Source provenance, SHA-256 fingerprinting, and credibility scoring | **PASS** |
-| `test_03_evidence_extraction_and_contradiction_detection` | Evidence extraction and numerical contradiction detection (>15%) | **PASS** |
-| `test_04_research_report_generation_with_verifiable_citations` | Research report generation with bracketed citations (`[1]`) | **PASS** |
-| `test_05_mock_web_and_local_workspace_search` | `MockWebSearchProvider` and `LocalWorkspaceSearchProvider` searching | **PASS** |
-| `test_06_document_parser_multi_format` | Multi-format document parser (Markdown, HTML, Plain text, DOCX) | **PASS** |
-| `test_07_document_generator_openxml_docx` | Native OpenXML `.docx` generation with valid zip package structure | **PASS** |
-| `test_08_document_generator_pdf` | Headless PDF 1.4 stream generation with standard xref tables | **PASS** |
-| `test_09_document_chunker_structure_aware` | Structure-aware chunking preserving paragraph boundaries and headings | **PASS** |
-| `test_10_document_versioning_and_diff` | Document revision tracking, content hashes, and unified diffing | **PASS** |
-| `test_11_spreadsheet_reader_csv_delimiter_inference` | CSV delimiter auto-detection and RFC 4180 quote escaping | **PASS** |
-| `test_12_data_analyzer_column_summaries_code_first` | Deterministic computation of Mean, Median, StdDev, Min, Max | **PASS** |
-| `test_13_data_analyzer_iqr_outlier_detection` | Tukey IQR outlier detection ($Q_1 - 1.5 \times IQR$, $Q_3 + 1.5 \times IQR$) | **PASS** |
-| `test_14_data_analyzer_group_by_aggregation` | Categorical group-by aggregation (Sum, Count, Mean) | **PASS** |
-| `test_15_chart_generator_svg_bar_and_line` | Native SVG vector chart generation for Bar and Line plots | **PASS** |
-| `test_16_business_connector_registry_rate_limit_circuit_breaker` | Rate limiting, backoff, and 3-strike circuit breaking | **PASS** |
-| `test_17_email_agent_approval_gate_enforcement` | Mandatory human approval gate preventing direct email dispatch | **PASS** |
-| `test_18_email_agent_idempotent_dispatch_deduplication` | Idempotent email dispatch deduplication via `operation_id` | **PASS** |
-| `test_19_calendar_provider_free_busy_and_conflict_detection` | Free/busy calculation, UTC normalization, and meeting proposal | **PASS** |
-| `test_20_business_workflow_coordinator_templates` | Instantiation of all 5 business workflow templates onto Task DAG | **PASS** |
-| `test_21_data_classification_and_egress_rules` | 4-tier data classification and egress restriction enforcement | **PASS** |
-| `test_22_secret_redactor_deterministic_masking` | Deterministic secret redaction masking credentials to `[REDACTED_SECRET]` | **PASS** |
-| `test_23_prompt_injection_defense_passive_data_tagging` | Encapsulation of untrusted inputs in `<UNTRUSTED_EXTERNAL_DATA>` | **PASS** |
-| `test_24_end_to_end_business_pipeline_integration` | End-to-end integration: Research → Analysis → Chart → DOCX → Email draft | **PASS** |
+| `test_p6_01_service_installation` | Windows Service installation into SCM adapter | **PASS** |
+| `test_p6_02_service_start_running` | Service start and `Running` state transition | **PASS** |
+| `test_p6_03_service_stop_stopped` | Service stop and `Stopped` state transition | **PASS** |
+| `test_p6_04_service_restart` | Service restart cycle (`Stopped` -> `Running`) | **PASS** |
+| `test_p6_05_service_uninstall` | Service uninstallation to `NotInstalled` | **PASS** |
+| `test_p6_06_desktop_ui_close_service_persists` | Headless execution persists when Desktop UI window is closed | **PASS** |
+| `test_p6_07_desktop_ui_reconnect_state_recovery` | UI reconnect queries active jobs, executions, and metrics | **PASS** |
+| `test_p6_08_durable_task_queue_persistence` | Database drop/reopen verifies queue durability across process death | **PASS** |
+| `test_p6_09_startup_crash_recovery_pure_tasks_reset` | Pure/idempotent tasks safely reset to `Ready` on startup reboot | **PASS** |
+| `test_p6_10_startup_crash_recovery_side_effects_held` | External side-effect tasks held in `OutcomeUnknown` | **PASS** |
+| `test_p6_11_operator_manual_reconciliation` | Operator reconciles `OutcomeUnknown` via `MarkCompleted` or `Retry` | **PASS** |
+| `test_p6_12_multi_worker_lease_and_heartbeat` | Worker process registration, heartbeat, and resource recording | **PASS** |
+| `test_p6_13_atomic_task_claiming_fencing_token` | Atomic task claiming prevents dual worker execution | **PASS** |
+| `test_p6_14_stale_worker_fencing_token_invalidation` | Stale worker token rejected upon concurrent task version mutation | **PASS** |
+| `test_p6_15_autonomous_scheduler_interval` | Interval schedule execution and next run timestamp advancement | **PASS** |
+| `test_p6_16_autonomous_scheduler_missed_run_skip` | Overdue job with policy `Skip` jumps to future interval without flood | **PASS** |
+| `test_p6_17_autonomous_scheduler_missed_run_run_once` | Overdue job with policy `RunOnce` triggers single catch-up run | **PASS** |
+| `test_p6_18_overlapping_job_protection` | Job with policy `Skip` skips triggering when previous instance is running | **PASS** |
+| `test_p6_19_worker_supervisor_heartbeat_tracking` | Process supervisor tracks healthy worker heartbeats | **PASS** |
+| `test_p6_20_watchdog_crash_detection_restart` | Watchdog detects terminated child process and restarts worker | **PASS** |
+| `test_p6_21_crash_loop_quarantine` | Circuit breaker quarantines worker after 3 crashes in 60s | **PASS** |
+| `test_p6_22_clean_process_tree_termination` | Clean recursive process tree termination (`taskkill /T /F`) | **PASS** |
+| `test_p6_23_resource_monitor_cpu_memory` | `SystemResourceMonitor` samples CPU, RAM MB, and memory percent | **PASS** |
+| `test_p6_24_resource_monitor_disk_warning` | Disk threshold checking (< 5GB warning; < 1GB critical) | **PASS** |
+| `test_p6_25_memory_backpressure_pause` | Memory backpressure detected when RAM utilization > 90% | **PASS** |
+| `test_p6_26_pre_request_token_budget_reservation` | Pre-request reservation eliminates parallel multi-agent budget races | **PASS** |
+| `test_p6_27_pre_request_cost_budget_reservation_rejection` | Reservation exceeding daily or workflow budget limit is rejected | **PASS** |
+| `test_p6_28_budget_reservation_release_on_failure` | Failed/cancelled request releases reservation back to available pool | **PASS** |
+| `test_p6_29_online_sqlite_backup_api` | Non-blocking online SQLite backup generates intact backup file | **PASS** |
+| `test_p6_30_database_restore_verification` | Restored database preserves all tables, rows, and scheduled jobs | **PASS** |
+| `test_p6_31_session0_deferral` | GUI automation in Session 0 defers to `WaitingForInteractiveSession` | **PASS** |
+| `test_p6_32_locked_desktop_deferral` | GUI automation defers while desktop locked, executes on unlock | **PASS** |
+| `test_p6_33_error_classifier` | Classifies Transient, Permanent, Resource, UserAction, UnknownOutcome | **PASS** |
+| `test_p6_34_circuit_breaker_transitions` | Circuit breaker transitions Closed -> Open -> HalfOpen -> Closed | **PASS** |
 
-### Phases 1–4 Acceptance & Unit Tests (97 / 97 Passed)
+### Phases 1–5 Acceptance & Unit Tests (126 / 126 Passed)
+- **Phase 5 Acceptance**: 24 / 24 Passed
 - **Phase 4 Acceptance**: 21 / 21 Passed
 - **Phase 3 Acceptance**: 18 / 18 Passed
 - **Phase 2 Acceptance**: 12 / 12 Passed
 - **Phase 1 Acceptance**: 9 / 9 Passed
-- **Workspace Unit Tests (All Crates)**: 37 / 37 Passed
+- **Workspace Unit Tests (All Crates)**: 42 / 42 Passed
 
-**Total: 121 / 121 Passed (100% Pass Rate). Zero Regressions.**
+**Total: 160 / 160 Passed (100% Pass Rate). Zero Regressions.**
 
 ---
 

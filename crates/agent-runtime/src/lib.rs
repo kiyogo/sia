@@ -21,12 +21,20 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 pub mod business_coordinator;
+pub mod recovery;
+pub mod scheduler;
+pub mod service;
 pub mod supervisor;
+pub mod watchdog;
 pub mod worker_dispatcher;
 pub mod workflow_scheduler;
 
 pub use business_coordinator::*;
+pub use recovery::*;
+pub use scheduler::*;
+pub use service::*;
 pub use supervisor::*;
+pub use watchdog::*;
 pub use worker_dispatcher::*;
 pub use workflow_scheduler::*;
 
@@ -136,6 +144,7 @@ pub struct RuntimeHost {
     lock_manager: Arc<ResourceLockManager>,
     supervisor: Arc<SupervisorEngine>,
     workflow_scheduler: Arc<WorkflowScheduler>,
+    service: Arc<AgentRuntimeService>,
     active_tasks: Arc<RwLock<HashMap<Uuid, TaskControl>>>,
     event_bus: broadcast::Sender<(Uuid, AgentEvent)>,
 }
@@ -194,6 +203,8 @@ impl RuntimeHost {
 
         let (event_bus, _) = broadcast::channel(500);
 
+        let service = Arc::new(AgentRuntimeService::new(Arc::new(database.clone())));
+
         let host = Self {
             config: Arc::new(RwLock::new(config)),
             database,
@@ -210,11 +221,16 @@ impl RuntimeHost {
             lock_manager,
             supervisor,
             workflow_scheduler,
+            service,
             active_tasks: Arc::new(RwLock::new(HashMap::new())),
             event_bus,
         };
 
         Ok(host)
+    }
+
+    pub fn service(&self) -> &Arc<AgentRuntimeService> {
+        &self.service
     }
 
     pub fn workflow_scheduler(&self) -> &Arc<WorkflowScheduler> {

@@ -25,7 +25,7 @@ thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
@@ -35,6 +35,8 @@ walkdir = "2.5"
 regex = "1.11"
 similar = "2.6"
 tempfile = "3.13"
+sysinfo = "0.33"
+windows-service = "0.8"
 
 # Internal crates
 agent-platform = { path = "crates/agent-platform" }
